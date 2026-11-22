@@ -1,0 +1,3220 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skizzenbrett – Lichess-Partien in 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #23221f; --paper: #f4efe3; --paper2: #ebe4d3; --red: #b8322a; --line: rgba(35,34,31,.35); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { display: flex; height: 100%; }
+  .stage { flex: 1; position: relative; min-width: 0; }
+  #board { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #board:active { cursor: grabbing; }
+  .hint { position: absolute; left: 14px; bottom: 10px; font: 600 17px Caveat, cursive; opacity: .55; pointer-events: none; }
+  #status { position: absolute; left: 0; right: 0; top: 12px; text-align: center; font: 700 30px Caveat, cursive; pointer-events: none; }
+  aside { width: 330px; flex: none; border-left: 1.5px solid var(--line); padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; background: var(--paper2); }
+  aside > * { flex-shrink: 0; }
+  h1 { font: 700 34px/1 Caveat, cursive; margin: 0; }
+  h1 small { display: block; font: 13px system-ui, sans-serif; opacity: .65; margin-top: 4px; }
+  #players { font-size: 15px; }
+  #players .meta { font-size: 12.5px; opacity: .65; margin-top: 2px; }
+  form { display: flex; gap: 6px; }
+  input[type=text], textarea { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1.5px solid var(--ink); border-radius: 3px 6px 4px 7px; background: var(--paper); color: var(--ink); }
+  textarea { width: 100%; height: 110px; font: 12px/1.35 ui-monospace, Menlo, monospace; resize: vertical; }
+  button { font: inherit; font-size: 14px; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 6px 3px 7px 4px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: #fffaf0; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px dashed var(--red); outline-offset: 2px; }
+  details summary { cursor: pointer; font-size: 14px; }
+  details[open] summary { margin-bottom: 6px; }
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; }
+  .controls button { padding: 5px 9px; }
+  #play { flex: 1; }
+  .opts { display: flex; gap: 14px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  .opts { row-gap: 4px; }
+  .opts .lbl { opacity: .65; }
+  .opts input[type=checkbox] { accent-color: var(--ink); }
+  select { font: inherit; font-size: 13px; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 4px 6px 3px 5px; padding: 2px 4px; margin-left: 4px; }
+  body.darkbg #status, body.darkbg .hint { color: #f1ece0; }
+  .opts input[type=range] { width: 90px; accent-color: var(--ink); }
+  .msg { font-size: 13px; min-height: 0; }
+  .msg.err { color: var(--red); border-left: 3px solid var(--red); padding-left: 8px; }
+  #viewopts .optsbox { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  #viewopts summary, #movesbox summary { font-size: 14px; }
+  #movesbox { border-top: 1.5px solid var(--line); padding-top: 6px; }
+  #moves { padding-top: 6px; }
+  #moves .row { display: grid; grid-template-columns: 34px 1fr 1fr; align-items: center; }
+  #moves .num { font-size: 13px; opacity: .55; text-align: right; padding-right: 6px; }
+  #moves .mv { border: none; background: none; text-align: left; padding: 2px 6px; font-size: 15px; border-radius: 3px; }
+  #moves .mv:hover { background: rgba(35,34,31,.07); }
+  #moves .mv.cur { font-weight: 700; text-decoration: underline wavy var(--red) 1.5px; text-underline-offset: 4px; }
+  #moves .start { margin-left: 34px; font-size: 13px; opacity: .8; }
+  .tabs { display: flex; gap: 0; border-bottom: 1.5px solid var(--ink); }
+  .tabs button { border: 1.5px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: none; padding: 5px 12px; margin-bottom: -1.5px; opacity: .65; }
+  .tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--paper); opacity: 1; font-weight: 600; }
+  .playonly, .puzzleonly, .studyonly, .liveonly { display: none; }
+  body.m-play .playonly, body.m-puzzle .puzzleonly, body.m-study .studyonly, body.m-live .liveonly { display: flex; }
+  #lv-login[hidden], #lv-panel[hidden], #lv-game[hidden], #lv-new[hidden], #lv-fair[hidden], .controls button[hidden] { display: none !important; }
+  .clockbox { display: flex; justify-content: space-between; align-items: baseline; border: 1.5px solid var(--line); border-radius: 5px 9px 6px 8px; padding: 4px 10px; background: var(--paper); }
+  .clockbox .who { font-size: 14px; }
+  .clockbox .clk { font: 700 28px/1 Caveat, cursive; min-width: 3.5em; text-align: right; }
+  .clockbox.active { border-color: var(--ink); border-width: 2.5px; }
+  .clockbox.active .clk::before { content: '▶ '; font-size: 16px; vertical-align: middle; }
+  .clockbox.low .clk { color: var(--red); }
+  .tabs button:disabled { opacity: .35; }
+  .confirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font: 700 19px Caveat, cursive; }
+  .confirm[hidden] { display: none !important; }
+  button.danger { border-color: var(--red); color: var(--red); border-width: 2px; font-weight: 600; }
+  #lv-listbox[hidden] { display: none !important; }
+  .gamelist { display: flex; flex-direction: column; gap: 5px; }
+  .gamebtn { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 1px; padding: 5px 9px; }
+  .gamebtn .g1 { font-size: 14px; }
+  .gamebtn .g2 { font-size: 12px; opacity: .7; }
+  .gamebtn.cur { border-width: 2.5px; font-weight: 600; }
+  .gamebtn.cur .g1::before { content: '▶ '; }
+  .gamebtn.myturn .g2 { opacity: 1; text-decoration: underline wavy var(--red) 1.2px; text-underline-offset: 3px; }
+  body:not(.m-replay) .replayonly { display: none !important; }
+  .tabs button { padding: 5px 7px; font-size: 13px; }
+  .tabs { flex-wrap: wrap; }
+  aside { overflow-x: hidden; }
+  .sect { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .trainmsg { font: 700 21px/1.15 Caveat, cursive; min-height: 1.2em; }
+  .trainmsg.good { text-decoration: underline wavy rgba(35,34,31,.45) 1.5px; text-underline-offset: 5px; }
+  .trainmsg.bad { color: var(--red); }
+  .pzinfo { font-size: 13.5px; display: flex; flex-direction: column; gap: 2px; }
+  .pzinfo .pztitle { font: 700 22px/1.1 Caveat, cursive; }
+  .pzinfo a { color: var(--ink); font-size: 13px; }
+  .stcomment { font-size: 14px; background: var(--paper); border: 1.5px solid var(--line); border-radius: 4px 8px 5px 9px; padding: 8px 10px; min-height: 48px; display: flex; flex-direction: column; gap: 6px; }
+  .stcomment .meta, .meta { font-size: 12.5px; opacity: .7; }
+  #moves .mv.has-note::after { content: '✎'; font-size: 11px; opacity: .55; margin-left: 3px; }
+  button:disabled { opacity: .4; cursor: default; }
+  .playbox { flex-direction: column; gap: 8px; }
+  .playmsg { font: 700 22px/1.1 Caveat, cursive; }
+  .controls button#play { flex: 1; }
+
+  #board { cursor: default; }
+  .promo { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--paper); border: 2px solid var(--ink); border-radius: 10px 6px 12px 7px; padding: 14px 16px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 340px; box-shadow: 4px 5px 0 rgba(35,34,31,.25); }
+  .promo[hidden] { display: none; }
+  #li-login[hidden], #li-account[hidden] { display: none !important; }
+  .pztitle { font: 700 20px/1.1 Caveat, cursive; }
+  .playbox a { color: var(--ink); }
+  .promo-title { width: 100%; text-align: center; font: 700 24px Caveat, cursive; }
+  .promo .ghost { border-style: dashed; opacity: .75; }
+  .menutoggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 22px; height: 64px; padding: 0; border-right: none; border-radius: 9px 0 0 9px; font: 700 22px/1 system-ui, sans-serif; background: var(--paper2); z-index: 5; }
+  body.menu-hidden aside { display: none; }
+  body.menu-hidden .menutoggle { transform: translateY(-50%); }
+  @media (max-width: 820px) {
+    .menutoggle { top: auto; bottom: 0; right: 50%; transform: translateX(50%) rotate(90deg); }
+    .hint { display: none; }
+    .app { flex-direction: column; }
+    .stage { height: 58vh; flex: none; }
+    aside { width: auto; border-left: none; border-top: 1.5px solid var(--line); flex: 1; }
+  }
+</style>
+</head>
+<body class="m-replay">
+<div class="app">
+  <div class="stage">
+    <canvas id="board" aria-label="Schachbrett in Skizzenansicht"></canvas>
+    <div id="status"></div>
+    <div id="promo" class="promo" hidden>
+      <div class="promo-title">Umwandeln in</div>
+      <button data-p="q">Dame</button><button data-p="r">Turm</button><button data-p="b">Läufer</button><button data-p="n">Springer</button>
+      <button id="promo-cancel" class="ghost">abbrechen</button>
+    </div>
+    <button id="menutoggle" class="menutoggle" title="Menü ein-/ausblenden (M)" aria-label="Menü ein- oder ausblenden">›</button>
+    <div class="hint">linke Maustaste = Figuren ziehen · mittlere Maustaste = Kamera drehen · rechte Maustaste = Zug abbrechen · Mausrad = Abstand · Doppelklick = zurück zum Platz</div>
+  </div>
+  <aside>
+    <h1>Skizzenbrett<small>Lichess-Partien aus Spielersicht</small></h1>
+    <div class="tabs" role="tablist">
+      <button id="tab-replay" role="tab" aria-selected="true">Nachspielen</button>
+      <button id="tab-play" role="tab" aria-selected="false">Spielen</button>
+      <button id="tab-puzzle" role="tab" aria-selected="false">Puzzles</button>
+      <button id="tab-study" role="tab" aria-selected="false">Studien</button>
+      <button id="tab-live" role="tab" aria-selected="false">Live</button>
+    </div>
+    <div id="players"></div>
+    <div class="puzzleonly playbox">
+      <div id="pzinfo" class="pzinfo"></div>
+      <div id="pzmsg" class="trainmsg"></div>
+      <div class="controls">
+        <button id="pz-hint">Tipp</button>
+        <button id="pz-show">Lösung zeigen</button>
+        <button id="pz-retry">Nochmal</button>
+      </div>
+      <div class="sect">Gewertet mit deinem Lichess-Konto</div>
+      <div id="li-login" class="playbox" style="display:flex">
+        <form id="li-form"><input type="password" id="li-token" placeholder="Lichess-API-Token (lip_…)" aria-label="Lichess-API-Token" autocomplete="off"><button type="submit">Verbinden</button></form>
+        <div class="meta">Token mit den Puzzle-Rechten (und für Live-Partien den Spielrechten):
+          <a href="https://lichess.org/account/oauth/token/create?scopes%5B%5D=puzzle:read&amp;scopes%5B%5D=puzzle:write&amp;scopes%5B%5D=board:play&amp;scopes%5B%5D=challenge:write&amp;description=Skizzenbrett" target="_blank" rel="noopener">bei Lichess erstellen ↗</a>.
+          Er wird nur in deinem Browser gespeichert und lässt sich bei Lichess jederzeit widerrufen.</div>
+      </div>
+      <div id="li-account" class="playbox" style="display:flex" hidden>
+        <div id="li-who" class="pztitle"></div>
+        <div class="controls"><button id="li-next">Gewertetes Puzzle</button><button id="li-logout">Abmelden</button></div>
+        <div class="meta">Wie auf Lichess: Ein Fehlversuch, ein Tipp oder „Lösung zeigen“ zählt als nicht gelöst.</div>
+      </div>
+      <div id="li-msg" class="msg"></div>
+      <div id="li-result" class="trainmsg"></div>
+      <div class="sect">Puzzles von Lichess (ungewertet)</div>
+      <div class="controls">
+        <button id="pz-daily">Tagespuzzle</button>
+        <button id="pz-next">Zufälliges Puzzle</button>
+      </div>
+      <form id="pz-idform"><input type="text" id="pz-id" placeholder="Puzzle-ID oder Link" aria-label="Puzzle-ID"><button type="submit">Laden</button></form>
+      <div class="sect">Ohne Internet</div>
+      <div class="controls"><button id="pz-offline">Nächstes Beispiel-Puzzle</button></div>
+    </div>
+    <div class="studyonly playbox">
+      <div id="studyname" class="meta"></div>
+      <label>Kapitel <select id="chapter" aria-label="Kapitel"></select></label>
+      <div id="stcomment" class="stcomment"></div>
+      <div class="opts">
+        <label><input type="checkbox" id="st-train"> Mitspielen</label>
+        <label>als <select id="st-color"><option value="auto">Seite am Zug</option><option value="w">Weiß</option><option value="b">Schwarz</option></select></label>
+      </div>
+      <div id="stmsg" class="trainmsg"></div>
+      <div class="controls"><button id="st-hint">Tipp</button><button id="st-show">Zug zeigen</button></div>
+      <div class="sect">Studie laden</div>
+      <form id="st-form"><input type="text" id="st-id" placeholder="Lichess-Studienlink" aria-label="Lichess-Studienlink"><button type="submit">Laden</button></form>
+      <details id="studypgnbox"><summary>PGN einfügen</summary><textarea id="st-pgn" spellcheck="false" placeholder="Studie bei Lichess als PGN exportieren und hier einfügen"></textarea>
+        <button id="st-loadpgn" type="button" style="margin-top:6px">Studie laden</button></details>
+      <div class="controls"><button id="st-sample">Beispielstudie</button></div>
+    </div>
+    <div class="liveonly playbox">
+      <div id="lv-login" class="playbox" style="display:flex">
+        <div>Für Live-Partien brauchst du einen Lichess-Token mit Spielrechten.</div>
+        <form id="lv-form"><input type="password" id="lv-token" placeholder="Lichess-API-Token (lip_…)" aria-label="Lichess-API-Token" autocomplete="off"><button type="submit">Verbinden</button></form>
+        <div class="meta"><a href="https://lichess.org/account/oauth/token/create?scopes%5B%5D=puzzle:read&amp;scopes%5B%5D=puzzle:write&amp;scopes%5B%5D=board:play&amp;scopes%5B%5D=challenge:write&amp;description=Skizzenbrett" target="_blank" rel="noopener">Token mit allen Rechten bei Lichess erstellen ↗</a> – Puzzles, Brett-Spiel und Herausforderungen. Mit diesem Token kann in deinem Namen gespielt werden; er bleibt nur in deinem Browser.</div>
+      </div>
+      <div id="lv-panel" class="playbox" style="display:flex" hidden>
+        <div id="lv-who" class="meta"></div>
+        <div id="lv-listbox" class="playbox" style="display:flex" hidden>
+          <div class="sect">Laufende Partien</div>
+          <div id="lv-list" class="gamelist"></div>
+        </div>
+        <div id="lv-game" class="playbox" style="display:flex" hidden>
+          <div id="lv-top" class="clockbox"><span class="who"></span><span class="clk"></span></div>
+          <div id="lv-bottom" class="clockbox"><span class="who"></span><span class="clk"></span></div>
+          <div class="controls">
+            <button id="lv-abort">Abbrechen</button>
+            <button id="lv-resign">Aufgeben</button>
+            <span id="lv-confirm" class="confirm" hidden>Wirklich aufgeben?
+              <button id="lv-resign-yes" class="danger">Ja, aufgeben</button><button id="lv-resign-no">Nein</button></span>
+            <button id="lv-draw">Remis anbieten</button>
+            <button id="lv-review">Im Nachspielen öffnen</button>
+            <button id="lv-newgame">Neue Partie</button>
+          </div>
+        </div>
+        <div id="lv-msg" class="trainmsg"></div>
+        <div id="lv-fair" class="meta" hidden>Während einer Echtzeitpartie sind Computer, Puzzles und Studien gesperrt – Lichess erlaubt dabei keine Hilfsmittel.</div>
+        <div id="lv-new" class="playbox" style="display:flex">
+          <div class="sect">Gegen die Lichess-KI</div>
+          <div class="opts">
+            <label>Stufe <select id="lv-level"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+            <label>Farbe <select id="lv-color"><option value="random">zufällig</option><option value="white">Weiß</option><option value="black">Schwarz</option></select></label>
+          </div>
+          <div class="opts">
+            <label>Bedenkzeit <select id="lv-time"><option value="5+3">5 + 3</option><option value="10+5" selected>10 + 5</option><option value="15+10">15 + 10</option><option value="30+0">30 + 0</option><option value="none">ohne Uhr</option></select></label>
+          </div>
+          <div class="controls"><button id="lv-start">Partie starten</button></div>
+          <div class="meta">Partien, die du auf lichess.org startest, erscheinen hier automatisch.</div>
+        </div>
+      </div>
+    </div>
+    <div class="playonly playbox">
+      <div class="opts">
+        <label>Ich spiele
+          <select id="mycolor"><option value="w">Weiß</option><option value="b">Schwarz</option></select>
+        </label>
+        <label>Gegner
+          <select id="opponent"><option value="cpu1" selected>Computer (leicht)</option><option value="cpu2">Computer (mittel)</option><option value="self">Ich selbst (beide Farben)</option></select>
+        </label>
+      </div>
+      <div id="playmsg" class="playmsg"></div>
+      <div class="controls">
+        <button id="newgame">Neue Partie</button>
+        <button id="undo">↶ Zug zurück</button>
+        <button id="copypgn">PGN kopieren</button>
+      </div>
+      <div id="playmsg2" class="msg"></div>
+      <details id="pgnoutbox"><summary>PGN anzeigen</summary><textarea id="pgnout" readonly spellcheck="false"></textarea></details>
+      <label class="msg"><input type="checkbox" id="show-targets"> mögliche Zielfelder zeigen</label>
+      <div class="msg" style="opacity:.7">Figur mit der Maus auf das Zielfeld ziehen – oder Figur und Zielfeld nacheinander anklicken.</div>
+    </div>
+    <form id="lichessform" class="replayonly">
+      <input type="text" id="lichessid" placeholder="Lichess-Link oder Partie-ID" aria-label="Lichess-Link oder Partie-ID">
+      <button type="submit">Laden</button>
+    </form>
+    <details id="pgnbox" class="replayonly">
+      <summary>PGN einfügen</summary>
+      <textarea id="pgn" spellcheck="false">[Event "Paris (Oper)"]
+[Site "Paris"]
+[Date "1858.??.??"]
+[White "Paul Morphy"]
+[Black "Herzog Karl & Graf Isouard"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0</textarea>
+      <button id="loadpgn" type="button" style="margin-top:6px">Partie laden</button>
+    </details>
+    <div id="msg" class="msg replayonly"></div>
+    <div class="controls">
+      <button id="first" title="Anfang (Pos1)" aria-label="Zum Anfang">⏮</button>
+      <button id="prev" title="Zurück (←)" aria-label="Zug zurück">◀</button>
+      <button id="play" class="replayonly" title="Abspielen (Leertaste)">▶ Abspielen</button>
+      <button id="next" title="Weiter (→)" aria-label="Nächster Zug">▶</button>
+      <button id="last" title="Ende (Ende)" aria-label="Zum Ende">⏭</button>
+    </div>
+    <div class="opts">
+      <button id="flip" title="Brett drehen (F)">⟲ Seite wechseln</button>
+          <label class="replayonly">Tempo <input type="range" id="speed" min="500" max="3000" step="100" value="1400" style="direction:rtl" aria-label="Abspieltempo"></label>
+    </div>
+    <details id="viewopts"><summary>Darstellung &amp; Ton</summary>
+    <div class="optsbox">
+    <div class="opts">
+      <label><input type="checkbox" id="boil" checked> Strich zittert</label>
+    </div>
+    <div class="opts">
+      <label>Figuren <select id="pieceset" aria-label="Figurensatz"></select></label>
+    </div>
+    <div class="opts">
+      <label>Hintergrund
+        <select id="bgsel" aria-label="Hintergrund">
+          <option value="weiss">Weiß</option>
+          <option value="hell">Hellgrau</option>
+          <option value="mittel">Mittelgrau</option>
+          <option value="dunkel">Dunkelgrau</option>
+          <option value="nacht">Sehr dunkel</option>
+        </select>
+      </label>
+    </div>
+    <div class="opts">
+      <label><input type="checkbox" id="sound" checked> Ton</label>
+      <label>Lautstärke <input type="range" id="volume" min="0" max="1" step="0.05" value="0.7" aria-label="Lautstärke"></label>
+    </div>
+    <div class="opts">
+      <span class="lbl">Anzeigen:</span>
+      <label><input type="checkbox" id="show-last" checked> letzter Zug</label>
+      <label><input type="checkbox" id="show-check" checked> Schach</label>
+      <label><input type="checkbox" id="show-coords" checked> Koordinaten</label>
+      <label><input type="checkbox" id="show-caps" checked> geschlagene Figuren</label>
+      <label><input type="checkbox" id="show-shapes" checked> Pfeile aus Studien</label>
+      <label><input type="checkbox" id="show-pad" checked> Partieformular</label>
+    </div>
+    </div>
+    </details>
+    <details id="movesbox"><summary>Zugliste im Menü</summary><div id="moves"></div></details>
+  </aside>
+</div>
+<script>
+// Minimaler Schach-Kern: PGN lesen, SAN-Züge auflösen, Stellungen pro Halbzug erzeugen.
+// Keine Abhängigkeiten. Feld-Index: rank*8 + file (a1 = 0, h8 = 63).
+const ChessCore = (() => {
+  const FILES = 'abcdefgh';
+  const sqName = (i) => FILES[i & 7] + ((i >> 3) + 1);
+  const sqIndex = (s) => (s.charCodeAt(1) - 49) * 8 + (s.charCodeAt(0) - 97);
+  const onBoard = (f, r) => f >= 0 && f < 8 && r >= 0 && r < 8;
+
+  function initialBoard() {
+    const b = new Array(64).fill(null);
+    const back = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+    let id = 0;
+    for (let f = 0; f < 8; f++) {
+      const look = f < 4 ? 1 : -1; // Blickrichtung der Springer: zur Brettmitte
+      b[f] = { t: back[f], c: 'w', id: id++, look };
+      b[8 + f] = { t: 'p', c: 'w', id: id++, look };
+      b[48 + f] = { t: 'p', c: 'b', id: id++, look };
+      b[56 + f] = { t: back[f], c: 'b', id: id++, look };
+    }
+    return b;
+  }
+
+  const DIRS = {
+    n: [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]],
+    b: [[1, 1], [1, -1], [-1, 1], [-1, -1]],
+    r: [[1, 0], [-1, 0], [0, 1], [0, -1]],
+  };
+  DIRS.q = DIRS.b.concat(DIRS.r);
+  DIRS.k = DIRS.q;
+
+  // Greift eine Figur auf "from" das Feld "to" an (ohne Bauern-Sonderregeln)?
+  function attacks(b, from, to) {
+    const p = b[from];
+    const ff = from & 7, fr = from >> 3, tf = to & 7, tr = to >> 3;
+    const df = tf - ff, dr = tr - fr;
+    switch (p.t) {
+      case 'p': {
+        const dir = p.c === 'w' ? 1 : -1;
+        return dr === dir && Math.abs(df) === 1;
+      }
+      case 'n': return (Math.abs(df) === 1 && Math.abs(dr) === 2) || (Math.abs(df) === 2 && Math.abs(dr) === 1);
+      case 'k': return Math.max(Math.abs(df), Math.abs(dr)) === 1;
+      default: {
+        const straight = df === 0 || dr === 0;
+        const diag = Math.abs(df) === Math.abs(dr);
+        if (df === 0 && dr === 0) return false;
+        if (p.t === 'r' && !straight) return false;
+        if (p.t === 'b' && !diag) return false;
+        if (p.t === 'q' && !straight && !diag) return false;
+        const sf = Math.sign(df), sr = Math.sign(dr);
+        let f = ff + sf, r = fr + sr;
+        while (f !== tf || r !== tr) {
+          if (b[r * 8 + f]) return false;
+          f += sf; r += sr;
+        }
+        return true;
+      }
+    }
+  }
+
+  function isAttacked(b, sq, byColor) {
+    for (let i = 0; i < 64; i++) {
+      if (b[i] && b[i].c === byColor && attacks(b, i, sq)) return true;
+    }
+    return false;
+  }
+
+  function kingSq(b, c) {
+    for (let i = 0; i < 64; i++) if (b[i] && b[i].t === 'k' && b[i].c === c) return i;
+    return -1;
+  }
+
+  // Führt einen Zug auf einer Kopie aus und liefert {board, captured, ep}
+  function applyMove(b, mv, ep) {
+    const nb = b.slice();
+    const p = nb[mv.from];
+    let captured = nb[mv.to];
+    let capSq = mv.to;
+    if (p.t === 'p' && mv.to === ep && !captured) {
+      capSq = mv.to + (p.c === 'w' ? -8 : 8);
+      captured = nb[capSq];
+      nb[capSq] = null;
+    }
+    nb[mv.to] = mv.promo ? { t: mv.promo, c: p.c, id: p.id, look: p.look } : p;
+    nb[mv.from] = null;
+    if (mv.castle) {
+      const r = mv.from >> 3;
+      const [rf, rt] = mv.castle === 'K' ? [7, 5] : [0, 3];
+      nb[r * 8 + rt] = nb[r * 8 + rf];
+      nb[r * 8 + rf] = null;
+    }
+    let newEp = -1;
+    if (p.t === 'p' && Math.abs(mv.to - mv.from) === 16) newEp = (mv.from + mv.to) / 2;
+    return { board: nb, captured: captured || null, capSq, ep: newEp };
+  }
+
+  function leavesKingSafe(b, mv, ep, c) {
+    const { board } = applyMove(b, mv, ep);
+    return !isAttacked(board, kingSq(board, c), c === 'w' ? 'b' : 'w');
+  }
+
+  const SAN_RE = /^([NBRQK])?([a-h])?([1-8])?(x)?([a-h][1-8])(?:=?([NBRQ]))?$/;
+
+  function resolveSan(b, san, c, ep) {
+    const clean = san.replace(/[+#!?]+$/g, '').replace(/[+#]/g, '');
+    if (/^(O-O-O|0-0-0)$/.test(clean) || /^(O-O|0-0)$/.test(clean)) {
+      const long = clean.length > 3;
+      const from = c === 'w' ? 4 : 60;
+      if (!b[from] || b[from].t !== 'k') throw new Error('Rochade ohne König auf e-Linie: ' + san);
+      return { from, to: from + (long ? -2 : 2), castle: long ? 'Q' : 'K' };
+    }
+    const m = clean.match(SAN_RE);
+    if (!m) throw new Error('Unbekannter Zug: ' + san);
+    const type = (m[1] || 'P').toLowerCase();
+    const dfile = m[2] ? m[2].charCodeAt(0) - 97 : -1;
+    const drank = m[3] ? m[3].charCodeAt(0) - 49 : -1;
+    const to = sqIndex(m[5]);
+    const promo = m[6] ? m[6].toLowerCase() : null;
+    const cands = [];
+    for (let i = 0; i < 64; i++) {
+      const p = b[i];
+      if (!p || p.c !== c || p.t !== type) continue;
+      if (dfile >= 0 && (i & 7) !== dfile) continue;
+      if (drank >= 0 && (i >> 3) !== drank) continue;
+      let ok = false;
+      if (type === 'p') {
+        const dir = c === 'w' ? 8 : -8;
+        const startRank = c === 'w' ? 1 : 6;
+        if ((i & 7) === (to & 7)) {
+          if (!b[to] && i + dir === to) ok = true;
+          else if (!b[to] && (i >> 3) === startRank && i + 2 * dir === to && !b[i + dir]) ok = true;
+        } else if (Math.abs((i & 7) - (to & 7)) === 1 && i + dir === to - ((to & 7) - (i & 7))) {
+          // diagonaler Schlag
+          if ((b[to] && b[to].c !== c) || to === ep) ok = true;
+        }
+      } else {
+        ok = attacks(b, i, to) && (!b[to] || b[to].c !== c);
+      }
+      if (ok) cands.push(i);
+    }
+    let legal = cands.filter((from) => leavesKingSafe(b, { from, to, promo }, ep, c));
+    if (legal.length === 0) throw new Error('Zug nicht möglich: ' + san);
+    if (legal.length > 1) throw new Error('Zug mehrdeutig: ' + san);
+    return { from: legal[0], to, promo };
+  }
+
+  // ---------- Selbst spielen: Stellungen, legale Züge, SAN, kleine Engine ----------
+  const startPos = () => ({ board: initialBoard(), turn: 'w', castling: { K: true, Q: true, k: true, q: true }, ep: -1, full: 1 });
+  const other = (c) => (c === 'w' ? 'b' : 'w');
+
+  function pseudoMoves(pos) {
+    const b = pos.board, c = pos.turn, out = [];
+    const promoRank = c === 'w' ? 7 : 0;
+    const pushP = (from, to) => {
+      if ((to >> 3) === promoRank) for (const pr of ['q', 'r', 'b', 'n']) out.push({ from, to, promo: pr });
+      else out.push({ from, to });
+    };
+    for (let i = 0; i < 64; i++) {
+      const p = b[i];
+      if (!p || p.c !== c) continue;
+      const f = i & 7, r = i >> 3;
+      if (p.t === 'p') {
+        const dir = c === 'w' ? 1 : -1, r1 = r + dir;
+        if (onBoard(f, r1) && !b[r1 * 8 + f]) {
+          pushP(i, r1 * 8 + f);
+          const r2 = r + 2 * dir;
+          if (r === (c === 'w' ? 1 : 6) && !b[r2 * 8 + f]) out.push({ from: i, to: r2 * 8 + f });
+        }
+        for (const df of [-1, 1]) {
+          const nf = f + df;
+          if (!onBoard(nf, r1)) continue;
+          const t = r1 * 8 + nf;
+          if ((b[t] && b[t].c !== c) || t === pos.ep) pushP(i, t);
+        }
+      } else if (p.t === 'n' || p.t === 'k') {
+        for (const [df, dr] of DIRS[p.t]) {
+          const nf = f + df, nr = r + dr;
+          if (!onBoard(nf, nr)) continue;
+          const t = nr * 8 + nf;
+          if (!b[t] || b[t].c !== c) out.push({ from: i, to: t });
+        }
+      } else {
+        for (const [df, dr] of DIRS[p.t]) {
+          let nf = f + df, nr = r + dr;
+          while (onBoard(nf, nr)) {
+            const t = nr * 8 + nf;
+            if (b[t]) { if (b[t].c !== c) out.push({ from: i, to: t }); break; }
+            out.push({ from: i, to: t });
+            nf += df; nr += dr;
+          }
+        }
+      }
+    }
+    // Rochade
+    const base = c === 'w' ? 0 : 56, opp = other(c);
+    const k = b[base + 4];
+    if (k && k.t === 'k' && k.c === c && !isAttacked(b, base + 4, opp)) {
+      const rk = (sq) => b[sq] && b[sq].t === 'r' && b[sq].c === c;
+      if (pos.castling[c === 'w' ? 'K' : 'k'] && rk(base + 7) && !b[base + 5] && !b[base + 6] &&
+          !isAttacked(b, base + 5, opp) && !isAttacked(b, base + 6, opp)) out.push({ from: base + 4, to: base + 6, castle: 'K' });
+      if (pos.castling[c === 'w' ? 'Q' : 'q'] && rk(base) && !b[base + 1] && !b[base + 2] && !b[base + 3] &&
+          !isAttacked(b, base + 3, opp) && !isAttacked(b, base + 2, opp)) out.push({ from: base + 4, to: base + 2, castle: 'Q' });
+    }
+    return out;
+  }
+
+  function legalMoves(pos) {
+    return pseudoMoves(pos).filter((mv) => leavesKingSafe(pos.board, mv, pos.ep, pos.turn));
+  }
+
+  function makeMove(pos, mv) {
+    const res = applyMove(pos.board, mv, pos.ep);
+    const cs = { ...pos.castling };
+    const p = pos.board[mv.from];
+    if (p.t === 'k') { if (p.c === 'w') cs.K = cs.Q = false; else cs.k = cs.q = false; }
+    for (const sq of [mv.from, mv.to]) {
+      if (sq === 0) cs.Q = false; if (sq === 7) cs.K = false;
+      if (sq === 56) cs.q = false; if (sq === 63) cs.k = false;
+    }
+    return { pos: { board: res.board, turn: other(pos.turn), castling: cs, ep: res.ep }, captured: res.captured };
+  }
+
+  const inCheck = (pos) => isAttacked(pos.board, kingSq(pos.board, pos.turn), other(pos.turn));
+
+  function status(pos) {
+    const legal = legalMoves(pos);
+    if (!legal.length) return inCheck(pos) ? 'mate' : 'stalemate';
+    const rest = pos.board.filter((p) => p && p.t !== 'k');
+    if (rest.length === 0 || (rest.length === 1 && (rest[0].t === 'n' || rest[0].t === 'b'))) return 'material';
+    return inCheck(pos) ? 'check' : null;
+  }
+
+  function toSan(pos, mv) {
+    let s;
+    if (mv.castle) s = mv.castle === 'K' ? 'O-O' : 'O-O-O';
+    else {
+      const p = pos.board[mv.from];
+      const cap = !!pos.board[mv.to] || (p.t === 'p' && mv.to === pos.ep);
+      if (p.t === 'p') {
+        s = (cap ? 'abcdefgh'[mv.from & 7] + 'x' : '') + sqName(mv.to) + (mv.promo ? '=' + mv.promo.toUpperCase() : '');
+      } else {
+        const rivals = legalMoves(pos).filter((m) => m.to === mv.to && m.from !== mv.from && pos.board[m.from].t === p.t);
+        let dis = '';
+        if (rivals.length) {
+          if (!rivals.some((m) => (m.from & 7) === (mv.from & 7))) dis = 'abcdefgh'[mv.from & 7];
+          else if (!rivals.some((m) => (m.from >> 3) === (mv.from >> 3))) dis = String((mv.from >> 3) + 1);
+          else dis = sqName(mv.from);
+        }
+        s = p.t.toUpperCase() + dis + (cap ? 'x' : '') + sqName(mv.to);
+      }
+    }
+    const next = makeMove(pos, mv).pos;
+    if (inCheck(next)) s += legalMoves(next).length ? '+' : '#';
+    return s;
+  }
+
+  // Kleine Engine: Negamax mit Alpha-Beta, Material + etwas Zentrum/Entwicklung
+  const VAL = { p: 100, n: 310, b: 330, r: 500, q: 900, k: 0 };
+  function evaluate(pos) {
+    let s = 0;
+    pos.board.forEach((p, i) => {
+      if (!p) return;
+      const f = i & 7, r = i >> 3;
+      let v = VAL[p.t];
+      const center = 3.5 - Math.max(Math.abs(f - 3.5), Math.abs(r - 3.5));
+      if (p.t === 'n' || p.t === 'b') v += center * 8;
+      if (p.t === 'p') v += (p.c === 'w' ? r - 1 : 6 - r) * 6 + (f > 1 && f < 6 ? center * 4 : 0);
+      if (p.t === 'q') v += center * 2;
+      if (p.t === 'k') v += (p.c === 'w' ? -r : r - 7) * 10;
+      s += p.c === 'w' ? v : -v;
+    });
+    return pos.turn === 'w' ? s : -s;
+  }
+  function search(pos, depth, alpha, beta, ply) {
+    const moves = legalMoves(pos);
+    if (!moves.length) return inCheck(pos) ? -100000 + ply : 0;
+    if (depth === 0) return evaluate(pos);
+    moves.sort((a, b) => (pos.board[b.to] ? VAL[pos.board[b.to].t] : 0) - (pos.board[a.to] ? VAL[pos.board[a.to].t] : 0));
+    for (const mv of moves) {
+      const v = -search(makeMove(pos, mv).pos, depth - 1, -beta, -alpha, ply + 1);
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return alpha;
+  }
+  function bestMove(pos, depth, noise = 0) {
+    const moves = legalMoves(pos);
+    let best = null, bestV = -Infinity;
+    for (const mv of moves) {
+      const v = -search(makeMove(pos, mv).pos, depth - 1, -Infinity, Infinity, 1) + (Math.random() - 0.5) * noise;
+      if (v > bestV) { bestV = v; best = mv; }
+    }
+    return best;
+  }
+
+  // ---------- FEN, PGN mit Kommentaren/Varianten/Pfeilen, Partien als Folge von Stellungen ----------
+  function fromFen(fen) {
+    const [placement, turn = 'w', cast = '-', ep = '-'] = fen.trim().split(/\s+/);
+    const board = new Array(64).fill(null);
+    const rows = placement.split('/');
+    if (rows.length !== 8) throw new Error('Ungültige FEN: ' + fen);
+    let id = 100;
+    rows.forEach((row, i) => {
+      const r = 7 - i;
+      let f = 0;
+      for (const ch of row) {
+        if (/\d/.test(ch)) { f += Number(ch); continue; }
+        const t = ch.toLowerCase();
+        if (!'pnbrqk'.includes(t) || f > 7) throw new Error('Ungültige FEN: ' + fen);
+        board[r * 8 + f] = { t, c: ch === t ? 'b' : 'w', id: id++, look: f < 4 ? 1 : -1 };
+        f++;
+      }
+    });
+    if (kingSq(board, 'w') < 0 || kingSq(board, 'b') < 0) throw new Error('In der FEN fehlt ein König.');
+    return {
+      board, turn: turn === 'b' ? 'b' : 'w',
+      castling: { K: cast.includes('K'), Q: cast.includes('Q'), k: cast.includes('k'), q: cast.includes('q') },
+      ep: ep !== '-' ? sqIndex(ep) : -1,
+      full: Number(fen.trim().split(/\s+/)[5]) || 1,
+    };
+  }
+
+  // Leere Partie ab einer Stellung; Züge kommen mit pushMove dazu
+  function gameFromPos(pos, headers = {}) {
+    return { headers, plies: [], states: [pos.board], positions: [pos], captured: [[]], startColor: pos.turn, startFull: pos.full || 1, intro: '', introShapes: [] };
+  }
+  function pushMove(g, mv, extra = {}) {
+    const pos = g.positions[g.positions.length - 1];
+    const san = toSan(pos, mv);
+    const { pos: np, captured } = makeMove(pos, mv);
+    const i = g.plies.length;
+    const offset = g.startColor === 'b' ? 1 : 0;
+    const st = status(np);
+    const ply = {
+      san, from: mv.from, to: mv.to, color: pos.turn, castle: mv.castle || null, promo: mv.promo || null, captured,
+      check: st === 'check' || st === 'mate', mate: st === 'mate', num: g.startFull + Math.floor((i + offset) / 2),
+      comment: '', shapes: [], variations: [], ...extra,
+    };
+    g.plies.push(ply);
+    g.states.push(np.board);
+    g.positions.push(np);
+    const prev = g.captured[g.captured.length - 1];
+    g.captured.push(captured ? prev.concat([captured]) : prev);
+    return ply;
+  }
+  function uciToMove(pos, uci) {
+    const from = sqIndex(uci.slice(0, 2)), to = sqIndex(uci.slice(2, 4)), promo = uci[4] || undefined;
+    const mv = legalMoves(pos).find((m) => m.from === from && m.to === to && (m.promo || undefined) === promo);
+    if (!mv) throw new Error('Ungültiger Zug: ' + uci);
+    return mv;
+  }
+  function sanToMove(pos, san) {
+    const m = resolveSan(pos.board, san, pos.turn, pos.ep);
+    const legal = legalMoves(pos).find((x) => x.from === m.from && x.to === m.to && (x.promo || null) === (m.promo || null));
+    if (!legal) throw new Error('Zug nicht möglich: ' + san);
+    return legal;
+  }
+
+  function parseHeaders(pgn) {
+    const h = {};
+    const re = /\[(\w+)\s+"((?:[^"\\]|\\.)*)"\]/g;
+    let m;
+    while ((m = re.exec(pgn))) h[m[1]] = m[2].replace(/\\"/g, '"');
+    return h;
+  }
+
+  // Lichess-Anmerkungen: [%cal Ge2e4,Rd1d8] Pfeile, [%csl Gd4] Kreise
+  function parseShapes(c) {
+    const shapes = [];
+    c.replace(/\[%cal\s+([^\]]*)\]/g, (_, list) => {
+      list.split(',').forEach((x) => { const m = x.trim().match(/^([RGBY])([a-h][1-8])([a-h][1-8])$/); if (m) shapes.push({ kind: 'arrow', color: m[1], from: sqIndex(m[2]), to: sqIndex(m[3]) }); });
+    });
+    c.replace(/\[%csl\s+([^\]]*)\]/g, (_, list) => {
+      list.split(',').forEach((x) => { const m = x.trim().match(/^([RGBY])([a-h][1-8])$/); if (m) shapes.push({ kind: 'circle', color: m[1], sq: sqIndex(m[2]) }); });
+    });
+    const text = c.replace(/\[%[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+    return { text, shapes };
+  }
+
+  // Zerlegt den Zugteil in Hauptlinie (mit Kommentaren) und Varianten-Texte
+  function tokenize(movetext) {
+    const out = [];
+    let i = 0;
+    const n = movetext.length;
+    while (i < n) {
+      const ch = movetext[i];
+      if (/\s/.test(ch)) { i++; continue; }
+      if (ch === '{') { const j = movetext.indexOf('}', i); const end = j < 0 ? n : j; out.push({ type: 'comment', text: movetext.slice(i + 1, end) }); i = end + 1; continue; }
+      if (ch === ';') { const j = movetext.indexOf('\n', i); const end = j < 0 ? n : j; out.push({ type: 'comment', text: movetext.slice(i + 1, end) }); i = end + 1; continue; }
+      if (ch === '(') {
+        let depth = 0, j = i;
+        for (; j < n; j++) {
+          if (movetext[j] === '{') { const k = movetext.indexOf('}', j); j = k < 0 ? n : k; continue; }
+          if (movetext[j] === '(') depth++;
+          else if (movetext[j] === ')') { depth--; if (depth === 0) break; }
+        }
+        out.push({ type: 'variation', text: movetext.slice(i + 1, j) });
+        i = j + 1; continue;
+      }
+      let j = i;
+      while (j < n && !/[\s{}();]/.test(movetext[j])) j++;
+      const tok = movetext.slice(i, j);
+      i = j;
+      if (/^\$\d+$/.test(tok) || /^(1-0|0-1|1\/2-1\/2|\*)$/.test(tok)) continue;
+      const mv = tok.replace(/^\d+\.+/, '');
+      if (!mv || /^\d+\.*$/.test(tok)) continue;
+      out.push({ type: 'move', san: mv });
+    }
+    return out;
+  }
+  const variationText = (t) => {
+    let s = t.replace(/\{[^}]*\}/g, ' ');
+    let prev; do { prev = s; s = s.replace(/\([^()]*\)/g, ' '); } while (s !== prev);
+    s = s.replace(/\$\d+/g, '').replace(/\s+/g, ' ').trim();
+    return s.length > 90 ? s.slice(0, 88).replace(/\s+\S*$/, '') + ' …' : s;
+  };
+
+  // Eine Partie (oder ein Studienkapitel) lesen
+  function loadPgn(pgn) {
+    const headers = parseHeaders(pgn);
+    if (headers.Variant && !/^(standard|from position)$/i.test(headers.Variant)) {
+      throw new Error('Nur Standard-Schach wird unterstützt (Variante: ' + headers.Variant + ')');
+    }
+    const start = headers.FEN ? fromFen(headers.FEN) : { ...startPos(), full: 1 };
+    const g = gameFromPos(start, headers);
+    const movetext = pgn.replace(/^\s*\[[^\]]*\]\s*$/gm, '');
+    for (const tk of tokenize(movetext)) {
+      if (tk.type === 'move') {
+        const pos = g.positions[g.positions.length - 1];
+        pushMove(g, sanToMove(pos, tk.san), { sanIn: tk.san });
+      } else if (tk.type === 'comment') {
+        const { text, shapes } = parseShapes(tk.text);
+        if (!g.plies.length) { g.intro = (g.intro + ' ' + text).trim(); g.introShapes.push(...shapes); }
+        else { const p = g.plies[g.plies.length - 1]; p.comment = (p.comment + ' ' + text).trim(); p.shapes.push(...shapes); }
+      } else if (tk.type === 'variation') {
+        // eine Variante ersetzt den zuletzt gespielten Zug: an diesen Halbzug hängen
+        const v = variationText(tk.text);
+        if (v && g.plies.length) g.plies[g.plies.length - 1].variations.push(v);
+      }
+    }
+    // Hinweis auf Matt aus der SAN übernehmen
+    g.plies.forEach((p) => { if (p.sanIn && /#/.test(p.sanIn)) p.mate = true; });
+    return g;
+  }
+
+  // Mehrere Partien/Kapitel aus einer PGN-Datei
+  function splitGames(text) {
+    const parts = text.replace(/\r/g, '').split(/\n\s*\n(?=\s*\[Event\s)/);
+    return parts.map((x) => x.trim()).filter((x) => x && (/\[\w+\s+"/.test(x) || /\d\./.test(x)));
+  }
+
+  // Gibt es ein erzwungenes Matt in n Zügen der Seite am Zug?
+  function mateIn(pos, n) {
+    if (n <= 0) return false;
+    for (const mv of legalMoves(pos)) {
+      const np = makeMove(pos, mv).pos;
+      const replies = legalMoves(np);
+      if (!replies.length) { if (inCheck(np)) return mv; continue; }
+      if (n === 1) continue;
+      if (replies.every((r) => mateIn(makeMove(np, r).pos, n - 1))) return mv;
+    }
+    return false;
+  }
+  return { loadPgn, splitGames, fromFen, gameFromPos, pushMove, uciToMove, sqName, sqIndex, kingSq, startPos, legalMoves, makeMove, toSan, status, inCheck, bestMove, mateIn };
+})();
+if (typeof module !== 'undefined') module.exports = ChessCore;
+
+</script>
+<script>
+// ---------- Skizzen-Renderer: perspektivisches Brett aus Spielersicht, Bleistiftstil ----------
+(() => {
+  const INK = '#23221f';
+  const PAPER = '#f4efe3';
+  const RED = '#b8322a';
+
+  const canvas = document.getElementById('board');
+  let ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1, S = 1; // S = Strichstärken-Skalierung
+
+  // ---- Kamera ----
+  const cam = { az: 0, el: (40 * Math.PI) / 180, dist: 12.2, target: [0, 0, 0.3], f: 800 };
+  let azGoal = 0;
+  let pos, fwd, right, up, towardH;
+
+  function updateCamera() {
+    const ox = 0, oz = 0.3;
+    cam.target = [ox * Math.cos(cam.az) + oz * Math.sin(cam.az), 0, -ox * Math.sin(cam.az) + oz * Math.cos(cam.az)];
+    const ce = Math.cos(cam.el), se = Math.sin(cam.el);
+    pos = [cam.target[0] + cam.dist * Math.sin(cam.az) * ce, cam.target[1] + cam.dist * se, cam.target[2] + cam.dist * Math.cos(cam.az) * ce];
+    fwd = norm(sub(cam.target, pos));
+    right = norm([-fwd[2], 0, fwd[0]]);
+    up = cross(right, fwd);
+    towardH = [Math.sin(cam.az), 0, Math.cos(cam.az)];
+    const fy = (H * 0.5) / Math.tan((16.5 * Math.PI) / 180);
+    const fx = (W * 0.5) / Math.tan((34 * Math.PI) / 180);
+    cam.f = Math.min(fx, fy);
+  }
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+  function proj(p) {
+    const d = sub(p, pos);
+    const z = dot(d, fwd);
+    return [W / 2 + (cam.f * dot(d, right)) / z, H * 0.5 - (cam.f * dot(d, up)) / z, z];
+  }
+
+  // ---- Zufall mit Seed (für reproduzierbares "Zittern") ----
+  let boil = 0;
+  let boilAmt = 0.35; // Stärke des Zitterns relativ zur festen Strichunruhe
+  function rng(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let keyCounter = 0;
+  const nextKey = () => ++keyCounter * 2654435761;
+
+  // ---- Strich-Primitiven ----
+  function strokePts(pts, o = {}) {
+    if (pts.length < 2) return;
+    // lange Kanten unterteilen, damit die Glättung keine Ecken "abrundet"
+    const step = 14 * S;
+    const dense = [];
+    const segs = o.closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+      for (let k = 0; k < n; k++) dense.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+    }
+    if (!o.closed) dense.push(pts[pts.length - 1]);
+    else dense.push(pts[0]);
+    pts = dense;
+    const passes = o.passes ?? 2;
+    const key = o.key ?? nextKey();
+    for (let p = 0; p < passes; p++) {
+      const r = rng(key + p * 7919);
+      const rb = rng(key + p * 7919 + boil * 104729);
+      const amp = (o.amp ?? 0.9) * S;
+      const bamp = amp * boilAmt;
+      const q = pts.map(([x, y]) => [x + (r() - 0.5) * 2 * amp + (rb() - 0.5) * 2 * bamp, y + (r() - 0.5) * 2 * amp + (rb() - 0.5) * 2 * bamp]);
+      if (o.closed) q.push(q[0], q[1]);
+      if (o.overshoot !== false && !o.closed) {
+        const ext = (a, b) => { const dx = a[0] - b[0], dy = a[1] - b[1], l = Math.hypot(dx, dy) || 1, e = (1 + r() * 3) * S; return [a[0] + (dx / l) * e, a[1] + (dy / l) * e]; };
+        q[0] = ext(q[0], q[1]);
+        q[q.length - 1] = ext(q[q.length - 1], q[q.length - 2]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(q[0][0], q[0][1]);
+      for (let i = 1; i < q.length - 1; i++) {
+        const mx = (q[i][0] + q[i + 1][0]) / 2, my = (q[i][1] + q[i + 1][1]) / 2;
+        ctx.quadraticCurveTo(q[i][0], q[i][1], mx, my);
+      }
+      ctx.lineTo(q[q.length - 1][0], q[q.length - 1][1]);
+      ctx.strokeStyle = o.color || INK;
+      ctx.globalAlpha = (o.alpha ?? 0.85) * (o.fade ?? 1) * (p ? 0.6 : 1);
+      ctx.lineWidth = (o.w ?? 1.2) * S * (0.85 + r() * 0.3);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function densify(a, b, step) {
+    const n = Math.max(2, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step) + 1);
+    const out = [];
+    for (let i = 0; i < n; i++) { const t = i / (n - 1); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+    return out;
+  }
+  const sketchLine = (a, b, o = {}) => strokePts(densify(a, b, 16 * S), o);
+
+  function polyPath(poly) {
+    ctx.moveTo(poly[0][0], poly[0][1]);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+    ctx.closePath();
+  }
+
+  // Schraffur innerhalb des aktuellen Clips
+  function hatchLines(bbox, angle, spacing, o = {}) {
+    const r = rng(o.key ?? 1);
+    const rb = rng((o.key ?? 1) + boil * 31337);
+    const bj = boilAmt * S * 0.6;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    const nx = -dy, ny = dx;
+    const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[0], bbox[3]], [bbox[2], bbox[3]]];
+    let nmin = Infinity, nmax = -Infinity, dmin = Infinity, dmax = -Infinity;
+    for (const [x, y] of corners) {
+      const nv = x * nx + y * ny, dv = x * dx + y * dy;
+      nmin = Math.min(nmin, nv); nmax = Math.max(nmax, nv);
+      dmin = Math.min(dmin, dv); dmax = Math.max(dmax, dv);
+    }
+    ctx.beginPath();
+    for (let v = nmin + r() * spacing; v < nmax; v += spacing * (0.8 + r() * 0.4)) {
+      const j = (r() - 0.5) * (o.aj ?? 0.06);
+      const ddx = Math.cos(angle + j), ddy = Math.sin(angle + j);
+      const cx = nx * v, cy = ny * v;
+      const s0 = dmin - 4 + r() * 6, s1 = dmax + 4 - r() * 6;
+      ctx.moveTo(cx + ddx * s0 + (rb() - 0.5) * bj, cy + ddy * s0 + (rb() - 0.5) * bj);
+      ctx.lineTo(cx + ddx * s1 + (rb() - 0.5) * bj, cy + ddy * s1 + (rb() - 0.5) * bj);
+    }
+    ctx.strokeStyle = o.color || INK;
+    ctx.globalAlpha = (o.alpha ?? 0.5) * (o.fade ?? 1);
+    ctx.lineWidth = (o.w ?? 0.8) * S;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  function bboxOf(pts) {
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+    for (const [x, y] of pts) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); }
+    return [a, b, c, d];
+  }
+
+  // ---- Papier ----
+  let paperTex = null;
+  function makePaper() {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = PAPER; g.fillRect(0, 0, 256, 256);
+    const img = g.getImageData(0, 0, 256, 256);
+    const r = rng(42);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const n = (r() - 0.5) * 14;
+      img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n - 2;
+    }
+    g.putImageData(img, 0, 0);
+    paperTex = ctx.createPattern(c, 'repeat');
+  }
+
+  const BACKGROUNDS = {
+    weiss: { base: '#fdfcf8', hatch: null, dark: false },
+    hell: { base: '#efebe2', hatch: '#8a877f', ha: 0.3, dark: false },
+    mittel: { base: '#c4c0b7', hatch: '#5f5c55', ha: 0.32, dark: false },
+    dunkel: { base: '#6e6b65', hatch: '#2e2c29', ha: 0.4, dark: true },
+    nacht: { base: '#2a2927', hatch: '#6a6760', ha: 0.32, dark: true },
+  };
+  let bgName = 'dunkel';
+  try { const v = localStorage.getItem('skizze-bg2'); if (v && BACKGROUNDS[v]) bgName = v; } catch (e) {}
+  function setBackground(name) {
+    bgName = BACKGROUNDS[name] ? name : 'hell';
+    document.body.classList.toggle('darkbg', BACKGROUNDS[bgName].dark);
+    document.getElementById('bgsel').value = bgName;
+    bgCanvas = null; dirty = true;
+    try { localStorage.setItem('skizze-bg2', bgName); } catch (e) {}
+  }
+  let bgCanvas = null;
+  function makeBackground() {
+    bgCanvas = document.createElement('canvas');
+    bgCanvas.width = canvas.width; bgCanvas.height = canvas.height;
+    const real = ctx;
+    const g = bgCanvas.getContext('2d');
+    g.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const bg = BACKGROUNDS[bgName] || BACKGROUNDS.hell;
+    g.fillStyle = bg.base; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.5;
+    g.fillStyle = paperTex; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    // hatchLines zeichnet in ctx – kurz umleiten
+    ctx = g;
+    if (bg.hatch) hatchLines([0, 0, W, H], Math.PI * 0.3, 5 * S, { alpha: bg.ha, w: 0.8, aj: 0.008, color: bg.hatch, key: 77 });
+    ctx = real;
+  }
+
+  // ---- Weltkoordinaten ----
+  const sqWorld = (sq) => [(sq & 7) - 3.5, 3.5 - (sq >> 3)];
+  const P3 = (x, y, z) => proj([x, y, z]);
+
+  function ellipsePts(cx, y, cz, r, t0 = 0, t1 = Math.PI * 2, n = 28) {
+    // t = 0 -> rechts, t = PI/2 -> zur Kamera hin
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + ((t1 - t0) * i) / n;
+      const c = Math.cos(t), s = Math.sin(t);
+      out.push(P3(cx + r * (c * right[0] + s * towardH[0]), y, cz + r * (c * right[2] + s * towardH[2])));
+    }
+    return out;
+  }
+
+  // ---- Brett ----
+  function drawBoard(state) {
+    const E = 4.55, T = 0.38;
+    // Seitenflächen
+    const faces = [
+      { n: [0, 0, 1], q: [[-E, 0, E], [E, 0, E], [E, -T, E], [-E, -T, E]] },
+      { n: [0, 0, -1], q: [[E, 0, -E], [-E, 0, -E], [-E, -T, -E], [E, -T, -E]] },
+      { n: [1, 0, 0], q: [[E, 0, E], [E, 0, -E], [E, -T, -E], [E, -T, E]] },
+      { n: [-1, 0, 0], q: [[-E, 0, -E], [-E, 0, E], [-E, -T, E], [-E, -T, -E]] },
+    ];
+    faces.forEach((fc, i) => {
+      const c = mul(add(fc.q[0], fc.q[2]), 0.5);
+      if (dot(fc.n, sub(pos, c)) <= 0) return;
+      const poly = fc.q.map((p) => proj(p));
+      ctx.save(); ctx.beginPath(); polyPath(poly); ctx.fillStyle = paperTex; ctx.fill(); ctx.clip();
+      hatchLines(bboxOf(poly), Math.PI * 0.47, 5 * S, { alpha: 0.35, key: 900 + i });
+      ctx.restore();
+      strokePts(poly, { closed: true, key: 500 + i, w: 1.1 });
+    });
+    // Rahmen oben
+    const outer = [[-E, E], [E, E], [E, -E], [-E, -E]].map(([x, z]) => P3(x, 0, z));
+    const inner = [[-4, 4], [4, 4], [4, -4], [-4, -4]].map(([x, z]) => P3(x, 0, z));
+    ctx.beginPath(); polyPath(outer); ctx.fillStyle = paperTex; ctx.fill();
+    strokePts(outer, { closed: true, key: 601, w: 1.4 });
+    strokePts(inner, { closed: true, key: 602, w: 1.2 });
+    // dunkle Felder schraffieren
+    for (let sq = 0; sq < 64; sq++) {
+      const [x, z] = sqWorld(sq);
+      const poly = [[x - 0.5, z + 0.5], [x + 0.5, z + 0.5], [x + 0.5, z - 0.5], [x - 0.5, z - 0.5]].map(([a, b]) => P3(a, 0, b));
+      if (((sq & 7) + (sq >> 3)) % 2 !== 0) {
+        // helle Felder: nur ein Hauch Schraffur
+        ctx.save(); ctx.beginPath(); polyPath(poly); ctx.clip();
+        hatchLines(bboxOf(poly), Math.PI / 4, 7 * S, { alpha: 0.16, key: 1200 + sq });
+        ctx.restore();
+        continue;
+      }
+      ctx.save(); ctx.beginPath(); polyPath(poly); ctx.clip();
+      ctx.fillStyle = INK; ctx.globalAlpha = 0.1; ctx.fill(); ctx.globalAlpha = 1;
+      hatchLines(bboxOf(poly), -Math.PI / 4, 3.2 * S, { alpha: 0.62, key: 1000 + sq });
+      hatchLines(bboxOf(poly), Math.PI / 4, 6.5 * S, { alpha: 0.22, key: 1100 + sq });
+      ctx.restore();
+    }
+    // Gitter
+    for (let i = 1; i < 8; i++) {
+      sketchLine(P3(-4, 0, i - 4), P3(4, 0, i - 4), { key: 700 + i, w: 0.8, alpha: 0.5, passes: 1 });
+      sketchLine(P3(i - 4, 0, -4), P3(i - 4, 0, 4), { key: 720 + i, w: 0.8, alpha: 0.5, passes: 1 });
+    }
+    // Koordinaten (flach auf dem Rahmen liegend)
+    const awayH = mul(towardH, -1);
+    const flatText = (txt, x, z) => {
+      const o = P3(x, 0, z);
+      const ex = P3(x + right[0], 0, z + right[2]);
+      const ey = P3(x + awayH[0], 0, z + awayH[2]);
+      const k = 0.01;
+      ctx.save();
+      ctx.setTransform(DPR * (ex[0] - o[0]) * k, DPR * (ex[1] - o[1]) * k, DPR * (ey[0] - o[0]) * -k, DPR * (ey[1] - o[1]) * -k, DPR * o[0], DPR * o[1]);
+      ctx.font = '600 34px Caveat, "Comic Sans MS", cursive';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = INK; ctx.globalAlpha = 0.75;
+      ctx.fillText(txt, 0, 0);
+      ctx.restore();
+    };
+    if (show.coords) for (let i = 0; i < 8; i++) {
+      flatText('abcdefgh'[i], i - 3.5, 4.28); flatText('abcdefgh'[i], i - 3.5, -4.28);
+      flatText(String(i + 1), -4.28, 3.5 - i); flatText(String(i + 1), 4.28, 3.5 - i);
+    }
+  }
+
+  function drawMarks(view) {
+    if (!view.lastMove) return;
+    const fade = view.markFade;
+    if (show.last) {
+    const { from, to } = view.lastMove;
+    for (const sq of [from, to]) {
+      const [x, z] = sqWorld(sq);
+      const d = 0.42;
+      const poly = [[x - d, z + d], [x + d, z + d], [x + d, z - d], [x - d, z - d]].map(([a, b]) => P3(a, 0.002, b));
+      strokePts(poly, { closed: true, color: RED, w: 1.5, alpha: 0.8, fade, key: 3000 + sq });
+    }
+    // Pfeil
+    const [x0, z0] = sqWorld(from), [x1, z1] = sqWorld(to);
+    const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+    const ux = dx / L, uz = dz / L;
+    const a = [x0 + ux * 0.25, z0 + uz * 0.25], b = [x1 - ux * 0.3, z1 - uz * 0.3];
+    strokePts([a, b].map(([x, z]) => P3(x, 0.003, z)), { color: RED, w: 2.2, alpha: 0.7, fade, key: 3100 + from * 64 + to });
+    const hx = -uz, hz = ux;
+    for (const s of [1, -1]) {
+      const h = [b[0] - ux * 0.28 + hx * 0.17 * s, b[1] - uz * 0.28 + hz * 0.17 * s];
+      strokePts([b, h].map(([x, z]) => P3(x, 0.003, z)), { color: RED, w: 2.2, alpha: 0.7, fade, key: 3200 + s });
+    }
+    }
+    if (view.checkSq >= 0) {
+      const [kx, kz] = sqWorld(view.checkSq);
+      strokePts(ellipsePts(kx, 0.004, kz, 0.44, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 1.6, alpha: 0.85, fade, key: 3300 });
+      strokePts(ellipsePts(kx, 0.004, kz, 0.4, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 1.1, alpha: 0.6, fade, key: 3301 });
+    }
+  }
+
+  // ---- Figuren ----
+  // Profil: [radius, höhe, rand] ; rand 1 = vordere Ellipsenhälfte, 2 = ganze Ellipse
+  const BASE = (r) => [[r, 0, 0], [r, 0.07, 1], [r - 0.06, 0.12, 2], [r - 0.1, 0.165, 0]];
+  const TBASE = (r) => [[r, 0, 0], [r, 0.06, 1], [r - 0.04, 0.1, 2], [r - 0.08, 0.14, 0]];
+  const EBASE = (r) => [[r, 0, 0], [r, 0.05, 1], [r - 0.03, 0.08, 1], [r - 0.03, 0.11, 2], [r - 0.08, 0.15, 0], [r - 0.12, 0.2, 0]];
+  const ABASE = (r) => [[r, 0, 0], [r, 0.04, 1], [r - 0.02, 0.06, 0], [r - 0.02, 0.1, 1], [r - 0.07, 0.14, 2], [r - 0.11, 0.2, 0]];
+  const SLIM = (r) => [[r, 0, 0], [r, 0.04, 2], [r * 0.45, 0.06, 0]];
+  const TOKEN = (r, h) => [[r, 0, 0], [r, h, 2], [0, h, 0]];
+  // Springerkopf: Umriss in der Kopfebene (u < 0 = Nase), Auge, Nüster, Maul; th = Dicke
+  const HEAD_CLASSIC = {
+    pts: [[0.25, 0.22], [0.27, 0.46], [0.24, 0.72], [0.17, 0.94], [0.09, 1.07], [0.05, 1.19], [-0.01, 1.08], [-0.12, 1.04], [-0.27, 0.88], [-0.335, 0.75], [-0.3, 0.665], [-0.17, 0.665], [-0.07, 0.62], [-0.12, 0.49], [-0.21, 0.36], [-0.23, 0.22]],
+    eye: [-0.11, 0.92, 1.8], nose: [-0.29, 0.74], mane: { y: 0.92, n: 5 }, mouth: [[-0.17, 0.665], [-0.12, 0.7]], th: 0.2,
+  };
+  const scaleHead = (h, y0, fy, fu = 1, th = h.th) => {
+    const Y = (y) => y0 + (y - 0.22) * fy;
+    return {
+      ...h, th,
+      pts: h.pts.map(([u, y]) => [u * fu, Y(y)]),
+      eye: h.eye && [h.eye[0] * fu, Y(h.eye[1]), h.eye[2]],
+      nose: h.nose && [h.nose[0] * fu, Y(h.nose[1])],
+      mouth: h.mouth && h.mouth.map(([u, y]) => [u * fu, Y(y)]),
+      mane: h.mane && { ...h.mane, y: Y(h.mane.y), fy, fu },
+    };
+  };
+  const crossBoxes = (y0, h, w, t = 0.07) => [{ wx: t, wz: t, y0, y1: y0 + h }, { wx: w, wz: t, y0: y0 + h * 0.52, y1: y0 + h * 0.52 + t }];
+
+  const PIECE_SETS = {
+    klassisch: {
+      label: 'Staunton – Klassisch',
+      p: { body: [...BASE(0.3), [0.12, 0.25, 0], [0.09, 0.45, 0], [0.16, 0.49, 2], [0.16, 0.52, 0], [0.07, 0.57, 0]], spheres: [[0.71, 0.155]] },
+      r: { body: [...BASE(0.34), [0.17, 0.28, 0], [0.155, 0.7, 0], [0.225, 0.77, 0], [0.225, 1.0, 2], [0, 1.0, 0]], rook: { y: 1.0, r: 0.225, ri: 0.15, n: 6, d: 0.09 } },
+      n: { body: [...BASE(0.34), [0.245, 0.24, 2], [0, 0.24, 0]], head: HEAD_CLASSIC },
+      b: { body: [...BASE(0.32), [0.13, 0.3, 0], [0.095, 0.78, 0], [0.19, 0.83, 2], [0.19, 0.86, 0], [0.1, 0.9, 0], [0.15, 0.98, 0], [0.158, 1.06, 0], [0.135, 1.16, 0], [0.08, 1.24, 0], [0, 1.29, 0]], spheres: [[1.335, 0.055]], slit: [[0.11, 1.17, 0.07], [-0.02, 1.02, 0.15]] },
+      q: { body: [...BASE(0.36), [0.15, 0.33, 0], [0.11, 0.96, 0], [0.22, 1.01, 2], [0.22, 1.05, 0], [0.13, 1.09, 0], [0.12, 1.13, 0], [0.21, 1.31, 2], [0.14, 1.36, 0], [0, 1.39, 0]], spheres: [[1.45, 0.07]], crown: { y: 1.33, r: 0.2, br: 0.04, n: 9 } },
+      k: { body: [...BASE(0.37), [0.16, 0.35, 0], [0.12, 1.03, 0], [0.23, 1.09, 2], [0.23, 1.13, 0], [0.14, 1.17, 0], [0.13, 1.21, 0], [0.2, 1.37, 2], [0.14, 1.43, 0], [0.05, 1.47, 0], [0, 1.47, 0]], boxes: crossBoxes(1.45, 0.29, 0.24) },
+    },
+    turnier: {
+      label: 'Staunton – Turnier (kräftig, gedrungen)',
+      p: { body: [...TBASE(0.32), [0.14, 0.24, 0], [0.11, 0.4, 0], [0.18, 0.44, 2], [0.18, 0.47, 0], [0.08, 0.51, 0]], spheres: [[0.65, 0.165]] },
+      r: { body: [...TBASE(0.36), [0.2, 0.26, 0], [0.19, 0.62, 0], [0.25, 0.68, 0], [0.25, 0.88, 2], [0, 0.88, 0]], rook: { y: 0.88, r: 0.25, ri: 0.17, n: 4, d: 0.08 } },
+      n: { body: [...TBASE(0.36), [0.27, 0.2, 2], [0, 0.2, 0]],
+        head: { pts: [[0.26, 0.18], [0.28, 0.45], [0.24, 0.7], [0.16, 0.9], [0.1, 1.02], [0.07, 1.1], [0.0, 1.03], [-0.14, 0.98], [-0.3, 0.8], [-0.34, 0.68], [-0.29, 0.6], [-0.14, 0.6], [-0.08, 0.52], [-0.16, 0.36], [-0.22, 0.18]], eye: [-0.11, 0.86, 1.9], nose: [-0.3, 0.69], mouth: [[-0.18, 0.6], [-0.12, 0.64]], th: 0.24 } },
+      b: { body: [...TBASE(0.34), [0.15, 0.28, 0], [0.11, 0.7, 0], [0.2, 0.74, 2], [0.2, 0.77, 0], [0.11, 0.8, 0], [0.16, 0.88, 0], [0.17, 0.97, 0], [0.14, 1.06, 0], [0.08, 1.13, 0], [0, 1.17, 0]], spheres: [[1.22, 0.06]], slit: [[0.12, 1.06, 0.07], [-0.02, 0.92, 0.16]] },
+      q: { body: [...TBASE(0.38), [0.17, 0.3, 0], [0.12, 0.86, 0], [0.23, 0.9, 2], [0.23, 0.94, 0], [0.14, 0.98, 0], [0.13, 1.02, 0], [0.22, 1.18, 2], [0.15, 1.22, 0], [0, 1.25, 0]], spheres: [[1.31, 0.075]], crown: { y: 1.2, r: 0.21, br: 0.042, n: 8 } },
+      k: { body: [...TBASE(0.39), [0.18, 0.32, 0], [0.13, 0.92, 0], [0.24, 0.97, 2], [0.24, 1.01, 0], [0.15, 1.05, 0], [0.14, 1.09, 0], [0.21, 1.24, 2], [0.15, 1.29, 0], [0.05, 1.32, 0], [0, 1.32, 0]], boxes: crossBoxes(1.3, 0.27, 0.25, 0.08) },
+    },
+    edel: {
+      label: 'Staunton – Edel (hoch, fein gedrechselt)',
+      p: { body: [...EBASE(0.3), [0.1, 0.3, 0], [0.08, 0.48, 0], [0.17, 0.52, 2], [0.17, 0.545, 0], [0.11, 0.56, 2], [0.07, 0.6, 0]], spheres: [[0.75, 0.16]] },
+      r: { body: [...EBASE(0.34), [0.17, 0.35, 0], [0.15, 0.78, 0], [0.23, 0.82, 2], [0.23, 0.84, 0], [0.2, 0.87, 0], [0.235, 0.92, 0], [0.235, 1.12, 2], [0, 1.12, 0]], rook: { y: 1.12, r: 0.235, ri: 0.16, n: 6, d: 0.1 } },
+      n: { body: [...EBASE(0.35), [0.24, 0.26, 2], [0, 0.26, 0]], head: scaleHead(HEAD_CLASSIC, 0.26, 1.17, 0.97, 0.19) },
+      b: { body: [...EBASE(0.32), [0.12, 0.38, 0], [0.09, 0.9, 0], [0.2, 0.95, 2], [0.2, 0.98, 0], [0.14, 1.0, 2], [0.1, 1.03, 0], [0.16, 1.12, 0], [0.165, 1.22, 0], [0.14, 1.33, 0], [0.08, 1.42, 0], [0, 1.47, 0]], spheres: [[1.52, 0.06]], slit: [[0.12, 1.34, 0.07], [-0.02, 1.16, 0.15]] },
+      q: { body: [...EBASE(0.36), [0.14, 0.42, 0], [0.1, 1.1, 0], [0.22, 1.15, 2], [0.22, 1.18, 0], [0.15, 1.21, 2], [0.12, 1.25, 0], [0.12, 1.28, 0], [0.23, 1.48, 2], [0.15, 1.53, 0], [0, 1.56, 0]], spheres: [[1.63, 0.075]], crown: { y: 1.49, r: 0.22, br: 0.042, n: 11 } },
+      k: { body: [...EBASE(0.37), [0.15, 0.44, 0], [0.11, 1.18, 0], [0.23, 1.23, 2], [0.23, 1.26, 0], [0.16, 1.29, 2], [0.13, 1.33, 0], [0.13, 1.36, 0], [0.21, 1.55, 2], [0.15, 1.6, 0], [0.05, 1.65, 0], [0, 1.65, 0]], boxes: crossBoxes(1.63, 0.31, 0.25) },
+    },
+    antik: {
+      label: 'Staunton – 1849 (Original-Anmutung)',
+      p: { body: [...ABASE(0.31), [0.13, 0.3, 0], [0.1, 0.42, 0], [0.19, 0.46, 2], [0.19, 0.49, 0], [0.08, 0.53, 0]], spheres: [[0.67, 0.16]] },
+      r: { body: [...ABASE(0.35), [0.2, 0.3, 0], [0.2, 0.62, 0], [0.26, 0.68, 0], [0.26, 0.94, 2], [0, 0.94, 0]], rook: { y: 0.94, r: 0.26, ri: 0.18, n: 6, d: 0.14 } },
+      n: { body: [...ABASE(0.35), [0.25, 0.24, 2], [0, 0.24, 0]], head: scaleHead({ ...HEAD_CLASSIC, mane: { y: 0.95, n: 7 } }, 0.24, 1.05, 1.05, 0.22) },
+      b: { body: [...ABASE(0.33), [0.14, 0.32, 0], [0.1, 0.76, 0], [0.21, 0.8, 2], [0.21, 0.84, 0], [0.1, 0.87, 0], [0.17, 0.96, 0], [0.18, 1.06, 0], [0.15, 1.17, 0], [0.08, 1.26, 0], [0, 1.31, 0]], spheres: [[1.37, 0.07]], slit: [[0.13, 1.18, 0.07], [-0.03, 0.98, 0.17]] },
+      q: { body: [...ABASE(0.37), [0.16, 0.35, 0], [0.11, 0.92, 0], [0.24, 0.97, 2], [0.24, 1.01, 0], [0.13, 1.05, 0], [0.12, 1.1, 0], [0.25, 1.3, 2], [0.17, 1.33, 0], [0.08, 1.36, 0], [0, 1.37, 0]], spheres: [[1.44, 0.08]], crown: { y: 1.31, r: 0.24, br: 0.05, n: 8 } },
+      k: { body: [...ABASE(0.38), [0.17, 0.37, 0], [0.12, 1.0, 0], [0.25, 1.05, 2], [0.25, 1.09, 0], [0.14, 1.13, 0], [0.13, 1.17, 0], [0.24, 1.36, 2], [0.14, 1.42, 0], [0, 1.46, 0]], boxes: crossBoxes(1.44, 0.28, 0.27, 0.085), spheres: [[1.77, 0.045]] },
+    },
+    geometrisch: {
+      label: 'Geometrisch (Zylinder, Kegel, Würfel)',
+      p: { body: [[0.27, 0, 0], [0.27, 0.07, 2], [0.15, 0.07, 0], [0.15, 0.42, 2], [0, 0.42, 0]], spheres: [[0.56, 0.14]] },
+      r: { body: [[0.3, 0, 0], [0.3, 0.62, 1], [0.3, 0.74, 2], [0, 0.74, 0]], rook: { y: 0.74, r: 0.3, ri: 0.2, n: 0 } },
+      n: { body: [[0.3, 0, 0], [0.3, 0.1, 2], [0, 0.1, 0]],
+        head: { pts: [[0.22, 0.1], [0.22, 0.62], [0.14, 1.02], [0.0, 1.14], [-0.12, 1.02], [-0.34, 0.82], [-0.34, 0.64], [-0.12, 0.64], [-0.12, 0.1]], eye: [-0.07, 0.92, 2], th: 0.26 } },
+      b: { body: [[0.29, 0, 0], [0.29, 0.06, 2], [0.26, 0.06, 0], [0.04, 1.0, 0], [0, 1.0, 0]], spheres: [[1.07, 0.075]] },
+      q: { body: [[0.32, 0, 0], [0.32, 0.07, 2], [0.14, 0.07, 0], [0.14, 0.88, 0], [0.26, 1.2, 2], [0, 1.2, 0]], spheres: [[1.29, 0.085]] },
+      k: { body: [[0.33, 0, 0], [0.33, 0.07, 2], [0.15, 0.07, 0], [0.15, 1.02, 2], [0, 1.02, 0]], boxes: [{ wx: 0.34, wz: 0.34, y0: 1.02, y1: 1.34 }, { wx: 0.12, wz: 0.12, y0: 1.34, y1: 1.5 }] },
+    },
+    schlank: {
+      label: 'Schlank (modern, reduziert)',
+      p: { body: [...SLIM(0.24), [0.075, 0.5, 0], [0.06, 0.52, 0]], spheres: [[0.62, 0.1]] },
+      r: { body: [...SLIM(0.25), [0.12, 0.78, 0], [0.18, 0.8, 0], [0.18, 0.93, 2], [0, 0.93, 0]], rook: { y: 0.93, r: 0.18, ri: 0.11, n: 0 } },
+      n: { body: [...SLIM(0.26), [0.11, 0.45, 0], [0, 0.45, 0]],
+        head: { pts: [[0.12, 0.42], [0.14, 0.62], [0.1, 0.86], [0.03, 1.08], [-0.02, 1.19], [-0.06, 1.06], [-0.22, 0.86], [-0.25, 0.78], [-0.1, 0.76], [-0.02, 0.68], [-0.06, 0.42]], eye: [-0.06, 0.95, 1.5], th: 0.14 } },
+      b: { body: [...SLIM(0.25), [0.075, 0.88, 0], [0.11, 0.98, 0], [0.12, 1.07, 0], [0.09, 1.17, 0], [0.04, 1.23, 0], [0, 1.25, 0]], slit: [[0.08, 1.14, 0.06], [-0.01, 1.0, 0.11]] },
+      q: { body: [...SLIM(0.27), [0.08, 1.06, 0], [0.2, 1.12, 2], [0.2, 1.15, 0], [0.08, 1.17, 0], [0, 1.17, 0]], spheres: [[1.25, 0.07]] },
+      k: { body: [...SLIM(0.28), [0.085, 1.16, 0], [0.19, 1.22, 2], [0.19, 1.25, 0], [0.06, 1.27, 0], [0, 1.27, 0]], boxes: crossBoxes(1.27, 0.29, 0.18, 0.045) },
+    },
+    bauchig: {
+      label: 'Bauchig (rund, Holzkegel)',
+      p: { body: [[0.32, 0, 0], [0.32, 0.06, 1], [0.24, 0.1, 0], [0.27, 0.22, 0], [0.24, 0.32, 0], [0.13, 0.42, 0], [0.09, 0.45, 0]], spheres: [[0.6, 0.17]] },
+      r: { body: [[0.37, 0, 0], [0.37, 0.06, 1], [0.3, 0.1, 0], [0.34, 0.3, 0], [0.32, 0.5, 0], [0.36, 0.56, 0], [0.36, 0.78, 2], [0, 0.78, 0]], rook: { y: 0.78, r: 0.36, ri: 0.24, n: 6, d: 0.1 } },
+      n: { body: [[0.34, 0, 0], [0.34, 0.06, 1], [0.27, 0.1, 0], [0.29, 0.2, 2], [0, 0.2, 0]],
+        head: { pts: [[0.27, 0.2], [0.3, 0.45], [0.27, 0.68], [0.18, 0.88], [0.1, 0.98], [0.07, 1.07], [0.0, 1.01], [-0.12, 0.98], [-0.28, 0.86], [-0.37, 0.72], [-0.34, 0.6], [-0.18, 0.58], [-0.12, 0.5], [-0.2, 0.35], [-0.24, 0.2]], eye: [-0.1, 0.84, 2.6], nose: [-0.31, 0.7], th: 0.3 } },
+      b: { body: [[0.34, 0, 0], [0.34, 0.06, 1], [0.26, 0.1, 0], [0.29, 0.25, 0], [0.22, 0.4, 0], [0.12, 0.5, 0], [0.18, 0.56, 0], [0.21, 0.68, 0], [0.18, 0.82, 0], [0.1, 0.92, 0], [0, 0.95, 0]], spheres: [[1.0, 0.075]], slit: [[0.14, 0.82, 0.09], [0.0, 0.64, 0.2]] },
+      q: { body: [[0.36, 0, 0], [0.36, 0.06, 1], [0.28, 0.1, 0], [0.32, 0.28, 0], [0.24, 0.45, 0], [0.14, 0.58, 0], [0.22, 0.66, 2], [0.22, 0.7, 0], [0.12, 0.74, 0]], spheres: [[0.9, 0.18], [1.13, 0.06]] },
+      k: { body: [[0.37, 0, 0], [0.37, 0.06, 1], [0.29, 0.1, 0], [0.33, 0.3, 0], [0.25, 0.48, 0], [0.15, 0.62, 0], [0.23, 0.7, 2], [0.23, 0.74, 0], [0.12, 0.78, 0]], spheres: [[0.95, 0.19]], boxes: crossBoxes(1.1, 0.28, 0.26, 0.1) },
+    },
+    reise: {
+      label: 'Reise-Steine (flach, mit Buchstaben)',
+      p: { body: TOKEN(0.27, 0.12), token: 'B' },
+      n: { body: TOKEN(0.33, 0.15), token: 'S' },
+      b: { body: TOKEN(0.33, 0.15), token: 'L' },
+      r: { body: TOKEN(0.34, 0.17), token: 'T' },
+      q: { body: TOKEN(0.36, 0.2), token: 'D' },
+      k: { body: TOKEN(0.37, 0.24), token: 'K' },
+    },
+  };
+  let pieceSet = 'klassisch';
+  try { const v = localStorage.getItem('skizze-set'); if (v && PIECE_SETS[v]) pieceSet = v; } catch (e) {}
+
+  // Licht kommt von links vorn oben (aus Sicht von Weiß) und bleibt fest im Raum
+  const LIGHT = norm([-0.55, 0.75, 0.45]);
+  const LIGHT_H = norm([LIGHT[0], 0, LIGHT[2]]);
+
+  function hull(pts) {
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], hi = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+    return lo.slice(0, -1).concat(hi.slice(0, -1));
+  }
+  const area = (poly) => { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+  const orient = (poly) => (area(poly) < 0 ? poly.slice().reverse() : poly);
+
+  function drawPiece(pc) {
+    const def = PIECE_SETS[pieceSet][pc.t];
+    const s = pc.scale;
+    const bx = pc.x, by = pc.y, bz = pc.z;
+    const fade = pc.alpha;
+    const key = (pc.id + 1) * 7777;
+    const isBlack = pc.c === 'b';
+    const W3 = (lat, y, tw = 0) => P3(bx + (lat * right[0] + tw * towardH[0]) * s, by + y * s, bz + (lat * right[2] + tw * towardH[2]) * s);
+    const WX = (x, y, z) => P3(bx + x * s, by + y * s, bz + z * s); // lokale Weltachsen
+    const ell = (r, y, t0, t1, n = 24) => ellipsePts(bx, by + y * s, bz, r * s, t0, t1, n);
+    const allParts = [];
+    const lw = isBlack ? 2.4 : 2.1;
+    const o = { fade, w: lw };
+    // Schattenseite eines Rings: Winkelbereich im (right, towardH)-System
+    const la = Math.atan2(dot(LIGHT_H, towardH), dot(LIGHT_H, right));
+    const t0d = la + Math.PI / 2, t1d = la + Math.PI * 1.5;
+    let layerNo = 0;
+
+    // Eine Schicht: Kontur dick nachziehen, mit Papier füllen (deckt alles Dahinterliegende ab), schattieren
+    function renderLayer(lparts, lshade, contour = 2.1) {
+      const k = key + 1000 * ++layerNo;
+      lparts.forEach((p, i) => strokePts(p, { closed: true, w: lw * contour, alpha: 0.9, fade, passes: 1, amp: 0.7, key: k + i }));
+      const path = () => { ctx.beginPath(); for (const p of lparts) polyPath(p); };
+      ctx.save();
+      ctx.globalAlpha = fade; path(); ctx.fillStyle = paperTex; ctx.fill('nonzero'); ctx.globalAlpha = 1;
+      path(); ctx.clip('nonzero');
+      const bb = bboxOf(lparts.flat());
+      if (isBlack) {
+        path(); ctx.fillStyle = INK; ctx.globalAlpha = 0.4 * fade; ctx.fill('nonzero'); ctx.globalAlpha = 1;
+        hatchLines(bb, -Math.PI / 4, 3.2 * S, { alpha: 0.5, fade, key: key + 1 });
+        hatchLines(bb, Math.PI / 4, 3.8 * S, { alpha: 0.4, fade, key: key + 2 });
+      }
+      if (lshade.length) {
+        ctx.beginPath(); for (const p of lshade) polyPath(p); ctx.clip('nonzero');
+        hatchLines(bb, Math.PI * 0.36, (isBlack ? 3.2 : 3.6) * S, { alpha: isBlack ? 0.5 : 0.45, fade, key: key + 3 });
+        if (isBlack) hatchLines(bb, -Math.PI * 0.12, 4 * S, { alpha: 0.3, fade, key: key + 4 });
+      }
+      ctx.restore();
+    }
+    // sichtbare ebene Fläche eines Körpers (oder null)
+    const face = (n, center, poly3) => {
+      const wc = [bx + center[0] * s, by + center[1] * s, bz + center[2] * s];
+      if (dot(n, sub(pos, wc)) <= 0) return null;
+      return { poly: poly3.map(([x, y, z]) => WX(x, y, z)), dark: dot(n, LIGHT) < 0.05 };
+    };
+
+    // ---- Drehkörper (unterste Schicht) ----
+    const body = def.body;
+    const bodyParts = [], bodyShade = [];
+    for (let i = 0; i < body.length - 1; i++) {
+      const [r0, y0] = body[i], [r1, y1] = body[i + 1];
+      const a = ell(Math.max(r0, 0.001), y0, 0, Math.PI * 2, 22);
+      const b = ell(Math.max(r1, 0.001), y1, 0, Math.PI * 2, 22);
+      bodyParts.push(orient(hull(a.concat(b))));
+      if (Math.abs(y1 - y0) > 0.015 && Math.max(r0, r1) > 0.02) {
+        const da = ell(Math.max(r0, 0.001), y0, t0d, t1d, 12), db = ell(Math.max(r1, 0.001), y1, t0d, t1d, 12);
+        bodyShade.push(orient(hull(da.concat(db))));
+      }
+    }
+    allParts.push(...bodyParts);
+
+    // ---- weitere Schichten, von unten nach oben ----
+    const layers = [];
+    (def.spheres || []).forEach(([y, r]) => {
+      const c3 = [bx, by + y * s, bz];
+      const c = proj(c3); const rr = (cam.f * r * s) / c[2];
+      const pts = []; for (let i = 0; i < 26; i++) { const t = (i / 26) * Math.PI * 2; pts.push([c[0] + Math.cos(t) * rr, c[1] + Math.sin(t) * rr]); }
+      const lp = proj(add(c3, mul(LIGHT, 0.2)));
+      const ang = Math.atan2(lp[1] - c[1], lp[0] - c[0]);
+      const half = []; for (let i = 0; i <= 14; i++) { const t = ang + Math.PI * 0.55 + (Math.PI * 0.9 * i) / 14; half.push([c[0] + Math.cos(t) * rr, c[1] + Math.sin(t) * rr]); }
+      allParts.push(orient(pts));
+      layers.push({ y: y - r, draw: () => renderLayer([orient(pts)], [orient(half)], 1.8) });
+    });
+    if (def.crown) {
+      const cw = def.crown, balls = [];
+      for (let i = 0; i < cw.n; i++) {
+        const t = (i / cw.n) * Math.PI * 2 + 0.2;
+        const c = W3(Math.cos(t) * cw.r, cw.y, Math.sin(t) * cw.r);
+        const rr = (cam.f * cw.br * s) / c[2];
+        const q = []; for (let k = 0; k < 14; k++) { const u = (k / 14) * Math.PI * 2; q.push([c[0] + Math.cos(u) * rr, c[1] + Math.sin(u) * rr]); }
+        balls.push({ q: orient(q), depth: c[2] });
+      }
+      balls.sort((a, b) => b.depth - a.depth);
+      allParts.push(...balls.map((b) => b.q));
+      layers.push({ y: cw.y - cw.br, draw: () => balls.forEach((b) => renderLayer([b.q], [], 1.3)) });
+    }
+    (def.boxes || []).forEach((q) => {
+      const hx = q.wx / 2, hz = q.wz / 2, y0 = q.y0, y1 = q.y1, ym = (y0 + y1) / 2;
+      const pts8 = [];
+      for (const x of [-hx, hx]) for (const y of [y0, y1]) for (const z of [-hz, hz]) pts8.push(WX(x, y, z));
+      const hp = orient(hull(pts8));
+      allParts.push(hp);
+      const faces = [
+        face([0, 1, 0], [0, y1, 0], [[-hx, y1, -hz], [hx, y1, -hz], [hx, y1, hz], [-hx, y1, hz]]),
+        face([1, 0, 0], [hx, ym, 0], [[hx, y0, -hz], [hx, y0, hz], [hx, y1, hz], [hx, y1, -hz]]),
+        face([-1, 0, 0], [-hx, ym, 0], [[-hx, y0, hz], [-hx, y0, -hz], [-hx, y1, -hz], [-hx, y1, hz]]),
+        face([0, 0, 1], [0, ym, hz], [[-hx, y0, hz], [hx, y0, hz], [hx, y1, hz], [-hx, y1, hz]]),
+        face([0, 0, -1], [0, ym, -hz], [[hx, y0, -hz], [-hx, y0, -hz], [-hx, y1, -hz], [hx, y1, -hz]]),
+      ].filter(Boolean);
+      layers.push({ y: y0, draw: () => {
+        renderLayer([hp], faces.filter((f) => f.dark).map((f) => orient(f.poly)), 1.8);
+        faces.forEach((f, i) => strokePts(f.poly, { ...o, closed: true, w: lw * 0.7, passes: 1, key: key + 170 + i }));
+      } });
+    });
+    // Springerkopf als Körper mit Dicke: Nase zeigt in Welt-x-Richtung (lookX)
+    if (def.head) {
+      const hd = def.head, th = (hd.th || 0.2) / 2, L = pc.lookX;
+      const X = (u) => -u * L;
+      const n = hd.pts.length;
+      const hparts = [];
+      for (const zz of [th, -th]) hparts.push(orient(hd.pts.map(([u, y]) => WX(X(u), y, zz))));
+      const sides = [];
+      const ccw = area(hd.pts) > 0;
+      for (let i = 0; i < n; i++) {
+        const [u0, y0] = hd.pts[i], [u1, y1] = hd.pts[(i + 1) % n];
+        const quad = [[X(u0), y0, th], [X(u1), y1, th], [X(u1), y1, -th], [X(u0), y0, -th]];
+        hparts.push(orient(quad.map((p) => WX(...p))));
+        let nu = y1 - y0, ny = -(u1 - u0);
+        if (!ccw) { nu = -nu; ny = -ny; }
+        const nl = Math.hypot(nu, ny) || 1;
+        const f = face(norm([X(nu / nl) - X(0), ny / nl, 0]), [X((u0 + u1) / 2), (y0 + y1) / 2, 0], quad);
+        if (f) sides.push(f);
+      }
+      const fz = dot([0, 0, 1], sub(pos, [bx, by + 0.7 * s, bz])) > 0 ? th : -th;
+      const front = face([0, 0, Math.sign(fz)], [0, 0.7, fz], hd.pts.map(([u, y]) => [X(u), y, fz]));
+      allParts.push(...hparts);
+      const minY = Math.min(...hd.pts.map((p) => p[1]));
+      layers.push({ y: minY, draw: () => {
+        renderLayer(hparts, sides.filter((f) => f.dark).map((f) => orient(f.poly)));
+        sides.forEach((f, i) => strokePts(f.poly, { ...o, closed: true, w: lw * 0.6, passes: 1, key: key + 200 + i }));
+        if (!front) return;
+        // Vorderseite des Kopfes deckt die Seitenkanten dahinter ab
+        renderLayer([orient(front.poly)], front.dark ? [orient(front.poly)] : [], 1.2);
+        const F = (u, y) => WX(X(u), y, fz);
+        const dotc = isBlack ? PAPER : INK;
+        if (hd.eye) { const e = F(hd.eye[0], hd.eye[1]); ctx.beginPath(); ctx.arc(e[0], e[1], hd.eye[2] * S * s, 0, Math.PI * 2); ctx.fillStyle = dotc; ctx.globalAlpha = 0.9 * fade; ctx.fill(); ctx.globalAlpha = 1; }
+        if (hd.nose) { const e = F(hd.nose[0], hd.nose[1]); ctx.beginPath(); ctx.arc(e[0], e[1], 1.1 * S * s, 0, Math.PI * 2); ctx.fillStyle = dotc; ctx.globalAlpha = 0.8 * fade; ctx.fill(); ctx.globalAlpha = 1; }
+        if (hd.mane) {
+          const m = hd.mane, fy = m.fy || 1, fu = m.fu || 1;
+          for (let i = 0; i < m.n; i++) {
+            const y = m.y - i * 0.09 * fy * (5 / m.n) * 1.1;
+            strokePts([F((0.17 + i * 0.012) * fu, y), F((0.08 + i * 0.01) * fu, y - 0.07 * fy)], { ...o, w: lw * 0.55, passes: 1, color: dotc, key: key + 130 + i });
+          }
+        }
+        if (hd.mouth) strokePts(hd.mouth.map(([u, y]) => F(u, y)), { ...o, w: lw * 0.55, passes: 1, key: key + 140 });
+      } });
+    }
+
+    if (!anim && !pc.cap && pc.sq != null) hitList.push({ sq: pc.sq, parts: allParts, depth: pc.depth });
+
+    // ---- zeichnen: Körper, seine Linien, dann die höheren Schichten darüber ----
+    renderLayer(bodyParts, bodyShade);
+    body.forEach(([r, y, rim], i) => {
+      if (!rim || r <= 0.001) return;
+      strokePts(ell(r, y, 0, Math.PI, 20), { ...o, w: lw * 0.8, key: key + 20 + i });
+      if (rim === 2) {
+        const rNext = body[i + 1] ? body[i + 1][0] : 0;
+        const back = ell(r, y, Math.PI, Math.PI * 2, 24);
+        let seg = [];
+        back.forEach((pt, k) => {
+          const t = Math.PI + (Math.PI * k) / 24;
+          if (Math.abs(Math.cos(t)) * r > rNext * 1.02) seg.push(pt);
+          else { if (seg.length > 1) strokePts(seg, { ...o, w: lw * 0.75, key: key + 40 + i * 3 + k }); seg = []; }
+        });
+        if (seg.length > 1) strokePts(seg, { ...o, w: lw * 0.75, key: key + 60 + i });
+      }
+    });
+    if (def.rook) {
+      const rk = def.rook;
+      strokePts(ell(rk.ri, rk.y, 0, Math.PI * 2, 24), { ...o, closed: true, w: lw * 0.75, key: key + 90 });
+      for (let i = 0; i < (rk.n || 0); i++) {
+        const t = (i / rk.n) * Math.PI * 2 + 0.3;
+        if (Math.sin(t) < -0.2) continue;
+        const ca = Math.cos(t), sa = Math.sin(t), w = 0.035;
+        const P = (lat, y) => W3(ca * rk.r - sa * lat, y, sa * rk.r + ca * lat);
+        const slot = [P(-w, rk.y), P(-w, rk.y - rk.d), P(w, rk.y - rk.d), P(w, rk.y)];
+        ctx.beginPath(); polyPath(slot); ctx.fillStyle = INK; ctx.globalAlpha = (isBlack ? 0.35 : 0.5) * fade; ctx.fill(); ctx.globalAlpha = 1;
+        strokePts(slot, { ...o, w: lw * 0.6, passes: 1, key: key + 91 + i });
+        const Pi = (lat) => W3(ca * rk.ri - sa * lat, rk.y, sa * rk.ri + ca * lat);
+        strokePts([P(-w, rk.y), Pi(-w)], { ...o, w: lw * 0.5, passes: 1, key: key + 110 + i });
+        strokePts([P(w, rk.y), Pi(w)], { ...o, w: lw * 0.5, passes: 1, key: key + 120 + i });
+      }
+    }
+    if (def.slit) strokePts(def.slit.map(([l, y, tw]) => W3(l, y, tw)), { ...o, key: key + 95 });
+    layers.sort((a, b) => a.y - b.y).forEach((l) => l.draw());
+    if (def.token) {
+      const r0 = body[0][0], top = body[body.length - 1][1];
+      strokePts(ell(r0 * 0.78, top, 0, Math.PI * 2, 28), { ...o, closed: true, w: lw * 0.55, passes: 1, key: key + 160 });
+      const c3 = [bx, by + top * s, bz];
+      const oo = proj(c3), ex = proj(add(c3, right)), ey = proj(sub(c3, towardH));
+      const k = 0.01 * s * (r0 / 0.33);
+      ctx.save();
+      ctx.setTransform(DPR * (ex[0] - oo[0]) * k, DPR * (ex[1] - oo[1]) * k, DPR * (ey[0] - oo[0]) * -k, DPR * (ey[1] - oo[1]) * -k, DPR * oo[0], DPR * oo[1]);
+      ctx.font = '700 44px Caveat, "Comic Sans MS", cursive';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = isBlack ? PAPER : INK; ctx.globalAlpha = 0.95 * fade;
+      ctx.fillText(def.token, 0, 2);
+      ctx.restore();
+    }
+  }
+
+  const TABLE = -0.38; // Tischplatte: Unterkante des Bretts
+  function drawShadow(pc) {
+    const pts = ellipsePts(pc.x + 0.1 * pc.scale, (pc.base || 0) + 0.001, pc.z - 0.08 * pc.scale, 0.4 * pc.scale, 0, Math.PI * 2, 24);
+    ctx.beginPath(); polyPath(pts);
+    ctx.fillStyle = INK; ctx.globalAlpha = 0.09 * pc.alpha * Math.max(0, 1 - (pc.y - (pc.base || 0)) * 1.5); ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  // ---- Partie- und Ansichtszustand ----
+  const show = { last: true, check: true, coords: true, caps: true, shapes: true, pad: true };
+  let mode = 'replay';
+  const play = { game: null, positions: [], human: 'w', opp: 'cpu1', over: null, thinking: false, sel: -1, targets: [], token: 0 };
+  let replaySave = null;
+  let hitList = [];
+  let game = null;
+  let cur = 0;
+  let anim = null; // {from, to, t0, dur}
+
+  function capturedSlot(piece, list) {
+    const own = list.filter((p) => p.c === piece.c);
+    const k = own.findIndex((p) => p.id === piece.id);
+    // aus Sicht des Betrachters: geschlagene gegnerische Figuren rechts vorn, eigene verlorene links hinten
+    const viewer = seatColor();
+    const sd = viewer === 'w' ? 1 : -1;
+    if (piece.c !== viewer) { const col = Math.floor(k / 5), row = k % 5; return [sd * (5.2 + col * 0.7), sd * (3.0 - row * 0.72)]; }
+    const col = Math.floor(k / 3), row = k % 3;
+    return [-sd * (5.2 + col * 0.7), -sd * (3.0 - row * 0.7)];
+  }
+
+  function worldOf(ply) {
+    const m = new Map();
+    const b = game.states[ply];
+    b.forEach((p, sq) => { if (p) { const [x, z] = sqWorld(sq); m.set(p.id, { id: p.id, t: p.t, c: p.c, x, z, sq, scale: 1, cap: false, lookX: p.look ?? lookOf(p.id) }); } });
+    const caps = game.captured[ply];
+    if (show.caps) caps.forEach((p) => { const [x, z] = capturedSlot(p, caps); m.set(p.id, { id: p.id, t: p.t, c: p.c, x, z, scale: 0.68, cap: true, lookX: p.look ?? lookOf(p.id) }); });
+    return m;
+  }
+
+  // Startlinie einer Figur steckt in ihrer id (id = linie*4 + k); a–d schaut Richtung h, e–h Richtung a
+  const lookOf = (id) => ((id >> 2) < 4 ? 1 : -1);
+
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+  function currentPieces(now) {
+    if (!game) return [];
+    if (!anim) return [...worldOf(cur).values()].map((p) => {
+      const hd = pdrag && pdrag.moved ? pdrag : pdragHold;
+      if (hd && p.id === hd.id) return { ...p, x: hd.x, z: hd.z, y: 0.35, alpha: 1 };
+      return { ...p, y: p.cap ? TABLE : p.sq === play.sel ? 0.14 : 0, base: p.cap ? TABLE : 0, alpha: 1 };
+    });
+    const t = Math.min(1, (now - anim.t0) / anim.dur);
+    const A = anim.A, B = anim.B;
+    const out = [];
+    for (const [id, b] of B) {
+      const a = A.get(id) || b;
+      const moved = a.x !== b.x || a.z !== b.z;
+      let tt = t;
+      // Schlagen: geschlagene Figur wandert erst in der zweiten Hälfte vom Brett
+      if (a.cap !== b.cap) tt = b.cap ? Math.max(0, (t - 0.45) / 0.55) : Math.min(1, t / 0.55);
+      const e = ease(tt);
+      const dist = Math.hypot(b.x - a.x, b.z - a.z);
+      let lift = moved ? Math.sin(Math.PI * e) * Math.min(0.9, 0.18 + dist * 0.08) * (a.t === 'n' ? 1.6 : 1) : 0;
+      if (a.y0) lift = a.y0 * (1 - e); // abgesetzte Figur sinkt nur noch aufs Feld
+      out.push({ ...b, t: tt > 0.5 ? b.t : a.t, x: a.x + (b.x - a.x) * e, z: a.z + (b.z - a.z) * e, scale: a.scale + (b.scale - a.scale) * e, y: lift + ((a.cap ? TABLE : 0) + ((b.cap ? TABLE : 0) - (a.cap ? TABLE : 0)) * e), base: (a.cap ? TABLE : 0) + ((b.cap ? TABLE : 0) - (a.cap ? TABLE : 0)) * e, alpha: 1 });
+    }
+    if (t >= 1) anim = null;
+    return out;
+  }
+
+  function render(now) {
+    updateCamera();
+    keyCounter = 0;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (!bgCanvas) makeBackground();
+    ctx.drawImage(bgCanvas, 0, 0, W, H);
+    drawBoard();
+    let markFade = 1;
+    if (anim) markFade = Math.max(0, Math.min(1, ((now - anim.t0) / anim.dur - 0.6) / 0.4));
+    if (game && cur > 0 && (show.last || show.check)) {
+      const pl = game.plies[cur - 1] || { from: 0, to: 0, check: false, color: 'w' };
+      let checkSq = -1;
+      if (pl.check && show.check) checkSq = ChessCore.kingSq(game.states[cur], pl.color === 'w' ? 'b' : 'w');
+      drawMarks({ lastMove: { from: pl.from, to: pl.to }, markFade, checkSq });
+    }
+    drawPad();
+    drawShapes();
+    drawHint();
+    if (play.sel >= 0 && !anim) drawSelection();
+    if (pdrag && pdrag.moved) drawDropTarget(pdrag);
+    hitList = [];
+    const pcs = currentPieces(now);
+    const clk = clockItem();
+    pcs.forEach(drawShadow);
+    if (clk) pcs.push(clk);
+    // Reihenfolge nach waagerechtem Abstand zur Kamera: stimmt auch bei Blick von oben,
+    // wo die Köpfe hinterer Figuren über die Füße vorderer ragen
+    pcs.forEach((p) => (p.depth = Math.hypot(p.x - pos[0], p.z - pos[2])));
+    pcs.sort((a, b) => b.depth - a.depth);
+    pcs.forEach((p) => (p.kind === 'clock' ? drawClock(p) : drawPiece(p)));
+  }
+
+  // ---- Loop ----
+  let boilOn = true, lastBoil = 0, dirty = true;
+  function loop(now) {
+    if (Math.abs(azGoal - cam.az) > 0.001) { cam.az += (azGoal - cam.az) * 0.12; dirty = true; }
+    if (boilOn && now - lastBoil > 220) { boil++; lastBoil = now; dirty = true; }
+    if (anim) dirty = true;
+    if (dirty) { dirty = false; try { render(now); } catch (err) { console.error(err); } }
+    if (autoplay && mode === 'replay' && !anim && now - lastAuto > autoDelay) { lastAuto = now; if (cur < game.plies.length) go(cur + 1); else setAutoplay(false); }
+    requestAnimationFrame(loop);
+  }
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    S = Math.max(0.7, Math.min(W, H * 1.4) / 900);
+    bgCanvas = null;
+    dirty = true;
+  }
+
+  // ---------- Klänge: synthetisches Holz auf Holz (Web Audio) ----------
+  const Sound = (() => {
+    let ac = null, master = null, noiseBuf = null;
+    let on = true, vol = 0.7;
+    try { const v = JSON.parse(localStorage.getItem('skizze-sound') || 'null'); if (v) { on = !!v.on; vol = +v.vol; } } catch (e) {}
+    const save = () => { try { localStorage.setItem('skizze-sound', JSON.stringify({ on, vol })); } catch (e) {} };
+
+    function ensure() {
+      if (!ac) {
+        try {
+          ac = new (window.AudioContext || window.webkitAudioContext)();
+          master = ac.createGain(); master.gain.value = vol;
+          const comp = ac.createDynamicsCompressor();
+          master.connect(comp).connect(ac.destination);
+          noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+          const d = noiseBuf.getChannelData(0);
+          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        } catch (e) { ac = null; }
+      }
+      if (ac && ac.state === 'suspended') ac.resume().catch(() => {});
+    }
+    const jit = (x, a = 0.07) => x * (1 + (Math.random() - 0.5) * 2 * a);
+
+    // ein "Klack": kurzer gefilterter Anschlag + kurz nachklingender Holzkörper
+    function knock(t, o = {}) {
+      const g0 = o.gain ?? 0.6;
+      const click = ac.createBufferSource(); click.buffer = noiseBuf;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = jit(o.freq ?? 1700); bp.Q.value = o.q ?? 1.4;
+      const cg = ac.createGain();
+      cg.gain.setValueAtTime(0.0001, t);
+      cg.gain.exponentialRampToValueAtTime(g0, t + 0.002);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + (o.clickDur ?? 0.045));
+      click.connect(bp).connect(cg).connect(master);
+      click.start(t, Math.random() * 0.4); click.stop(t + 0.08);
+      for (const [mul, gmul, dur] of [[1, 0.55, 0.09], [2.76, 0.22, 0.05], [5.4, 0.08, 0.03]]) {
+        const osc = ac.createOscillator(); osc.type = 'sine';
+        const f = jit(o.body ?? 210, 0.05) * mul;
+        osc.frequency.setValueAtTime(f * 1.12, t);
+        osc.frequency.exponentialRampToValueAtTime(f, t + 0.02);
+        const og = ac.createGain();
+        og.gain.setValueAtTime(0.0001, t);
+        og.gain.exponentialRampToValueAtTime(g0 * gmul * (o.bodyGain ?? 1), t + 0.003);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + dur * (o.ring ?? 1));
+        osc.connect(og).connect(master);
+        osc.start(t); osc.stop(t + dur * (o.ring ?? 1) + 0.02);
+      }
+    }
+    // Schleifen/Rutschen (Filz über Holz)
+    function slide(t, dur = 0.18, gain = 0.12) {
+      const src = ac.createBufferSource(); src.buffer = noiseBuf;
+      const lp = ac.createBiquadFilter(); lp.type = 'bandpass'; lp.frequency.value = jit(900); lp.Q.value = 0.7;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t + dur * 0.3);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      src.connect(lp).connect(g).connect(master);
+      src.start(t, Math.random() * 0.2); src.stop(t + dur + 0.02);
+    }
+    const WEIGHT = { p: 0.85, n: 1, b: 1, r: 1.08, q: 1.12, k: 1.15 };
+    const pieceKnock = (t, type, gain = 0.6) => {
+      const w = WEIGHT[type] || 1;
+      knock(t, { gain: gain * w, freq: 1750 / w, body: 215 / w });
+    };
+
+    function play(kind, delay = 0, info = {}) {
+      if (!on) return;
+      ensure();
+      if (!ac) return;
+      const t = ac.currentTime + Math.max(0, delay);
+      switch (kind) {
+        case 'move': pieceKnock(t, info.type); break;
+        case 'capture':
+          pieceKnock(t, info.type, 0.75);
+          knock(t + 0.018, { gain: 0.35, freq: 2300, body: 260, ring: 0.6 });
+          slide(t + 0.12, 0.16, 0.08);
+          knock(t + 0.3, { gain: 0.22, freq: 1500, body: 190 });
+          break;
+        case 'castle': pieceKnock(t, 'k'); pieceKnock(t + 0.16, 'r', 0.5); break;
+        case 'pickup': knock(t, { gain: 0.12, freq: 2600, body: 320, ring: 0.5, clickDur: 0.02 }); break;
+        case 'back': pieceKnock(t, info.type, 0.3); break;
+        case 'end': {
+          for (const [f, dt] of [[523.25, 0], [659.25, 0.12], [783.99, 0.24]]) {
+            const o = ac.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+            const g = ac.createGain();
+            g.gain.setValueAtTime(0.0001, t + 0.35 + dt);
+            g.gain.exponentialRampToValueAtTime(0.12, t + 0.36 + dt);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6 + dt);
+            o.connect(g).connect(master); o.start(t + 0.35 + dt); o.stop(t + 1.7 + dt);
+          }
+          break;
+        }
+      }
+    }
+    return {
+      play, ensure,
+      get on() { return on; }, get vol() { return vol; },
+      setOn(v) { on = v; save(); if (on) ensure(); },
+      setVol(v) { vol = v; if (master) master.gain.value = v; save(); },
+    };
+  })();
+
+  // Ton für einen Schritt in der Partie, abgespielt, wenn die Figur landet
+  function soundForStep(from, to, delay) {
+    if (Math.abs(to - from) !== 1) return;
+    if (to < from) { Sound.play('move', delay, { type: 'p' }); return; }
+    const pl = game.plies[to - 1];
+    const type = game.states[to][pl.to] ? game.states[to][pl.to].t : 'p';
+    if (pl.castle) Sound.play('castle', delay);
+    else if (pl.captured) Sound.play('capture', delay, { type });
+    else Sound.play('move', delay, { type });
+    const over = pl.mate || (mode === 'play' && play.over && to === game.plies.length);
+    if (over) Sound.play('end', delay);
+  }
+  window.addEventListener('pointerdown', () => { if (Sound.on) Sound.ensure(); }, { capture: true });
+  window.addEventListener('keydown', () => { if (Sound.on) Sound.ensure(); }, { capture: true });
+
+  // ---- Steuerung ----
+  function go(n, animate = true, opts = {}) {
+    if (!game) return;
+    n = Math.max(0, Math.min(visLen(), n));
+    if (n === cur) return;
+    const dur = opts.dur ?? (animate && Math.abs(n - cur) === 1 ? 650 : animate && Math.abs(n - cur) === 2 ? 800 : 900);
+    anim = { from: cur, to: n, t0: performance.now(), dur, A: worldOf(cur), B: worldOf(n) };
+    if (animate) soundForStep(cur, n, (dur * 0.93) / 1000);
+    cur = n;
+    dirty = true;
+    updateMoveList();
+  }
+
+  let autoplay = false, lastAuto = 0, autoDelay = 1400;
+  const playBtn = document.getElementById('play');
+  function setAutoplay(on) {
+    autoplay = on; lastAuto = performance.now() - autoDelay + 300;
+    playBtn.textContent = on ? '❚❚ Pause' : '▶ Abspielen';
+  }
+
+  const movesEl = document.getElementById('moves');
+  function buildMoveList() {
+    movesEl.innerHTML = '';
+    if (!game) return;
+    const start = document.createElement('button');
+    start.className = 'mv start'; start.textContent = 'Start'; start.dataset.ply = 0;
+    movesEl.appendChild(start);
+    const n = visLen();
+    const off = game.plies.length && game.plies[0].color === 'b' ? 1 : 0;
+    for (let i = -off; i < n; i += 2) {
+      const row = document.createElement('div'); row.className = 'row';
+      const first = game.plies[Math.max(0, i)];
+      const num = document.createElement('span'); num.className = 'num'; num.textContent = (first ? first.num : '') + '.';
+      row.appendChild(num);
+      for (const j of [i, i + 1]) {
+        const b = document.createElement('button'); b.className = 'mv';
+        if (j >= 0 && j < n) {
+          const p = game.plies[j];
+          b.textContent = p.san;
+          b.dataset.ply = j + 1;
+          if (p.comment || (p.variations && p.variations.length)) b.classList.add('has-note');
+        } else { b.disabled = true; b.textContent = j < 0 ? '…' : ''; }
+        row.appendChild(b);
+      }
+      movesEl.appendChild(row);
+    }
+    updateMoveList();
+  }
+  function updateMoveList() {
+    movesEl.querySelectorAll('.mv').forEach((b) => b.classList.toggle('cur', Number(b.dataset.ply) === cur));
+    const el = movesEl.querySelector('.mv.cur');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+    const st = document.getElementById('status');
+    if (!game) { st.textContent = ''; return; }
+    if (cur === 0) st.textContent = 'Startstellung';
+    else {
+      const p = game.plies[cur - 1];
+      st.textContent = `${p.num}${p.color === 'w' ? '.' : '…'} ${p.san}` + (p.mate ? ' – Matt' : p.check ? ' – Schach' : '');
+      if (mode === 'play' && play.over && play.over !== 'mate' && cur === game.plies.length) st.textContent += play.over === 'stalemate' ? ' – Patt' : ' – Remis';
+    }
+    if (mode === 'play') updatePlayStatus();
+    if (mode === 'study') updateStudyComment();
+  }
+  movesEl.addEventListener('click', (e) => { const b = e.target.closest('.mv'); if (b && !b.disabled) { setAutoplay(false); go(Number(b.dataset.ply)); } });
+
+  function setPlayers(h) {
+    const elo = (x) => (x && x !== '?' ? ` (${x})` : '');
+    document.getElementById('players').innerHTML = '';
+    const pw = document.createElement('div'); pw.textContent = '♔ ' + (h.White || 'Weiß') + elo(h.WhiteElo);
+    const pb = document.createElement('div'); pb.textContent = '♚ ' + (h.Black || 'Schwarz') + elo(h.BlackElo);
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = [h.Event, h.Date && h.Date.replace(/\.\?\?/g, ''), h.Result].filter((x) => x && x !== '?').join(' · ');
+    document.getElementById('players').append(pw, pb, meta);
+  }
+
+  function loadGame(pgn) {
+    const msg = document.getElementById('msg');
+    try {
+      const g = ChessCore.loadPgn(pgn);
+      if (!g.plies.length) throw new Error('Keine Züge gefunden.');
+      game = g; cur = 0; anim = null; setAutoplay(false);
+      setPlayers(g.headers);
+      msg.textContent = ''; msg.className = 'msg';
+      buildMoveList();
+      dirty = true;
+      return true;
+    } catch (err) {
+      msg.textContent = err.message; msg.className = 'msg err';
+      return false;
+    }
+  }
+
+  async function loadLichess(input) {
+    const msg = document.getElementById('msg');
+    const m = input.trim().match(/(?:lichess\.org\/)?([A-Za-z0-9]{8})(?:[A-Za-z0-9]{4})?(?:\/(?:white|black))?(?:[#?].*)?$/);
+    if (!m) { msg.textContent = 'Das sieht nicht nach einem Lichess-Partielink aus.'; msg.className = 'msg err'; return; }
+    msg.textContent = 'Lade Partie …'; msg.className = 'msg';
+    try {
+      const res = await fetch(`https://lichess.org/game/export/${m[1]}?clocks=false&evals=false&literate=false`, { headers: { Accept: 'application/x-chess-pgn' } });
+      if (!res.ok) throw new Error(res.status === 404 ? 'Partie nicht gefunden.' : 'Lichess antwortet mit Fehler ' + res.status);
+      const txt = await res.text();
+      if (loadGame(txt)) document.getElementById('pgn').value = txt;
+    } catch (err) {
+      msg.className = 'msg err';
+      msg.textContent = err instanceof TypeError
+        ? 'Der direkte Abruf von lichess ist in dieser Vorschau gesperrt. Kopiere die PGN der Partie bei lichess und füge sie unten ein – oder öffne die Seite lokal, dann klappt der Link.'
+        : err.message;
+      document.getElementById('pgnbox').open = true;
+    }
+  }
+
+  document.getElementById('first').onclick = () => { setAutoplay(false); go(0); };
+  document.getElementById('prev').onclick = () => { setAutoplay(false); go(cur - 1); };
+  document.getElementById('next').onclick = () => { setAutoplay(false); go(cur + 1); };
+  document.getElementById('last').onclick = () => { setAutoplay(false); go(game ? visLen() : 0); };
+  playBtn.onclick = () => { if (game && cur >= game.plies.length) go(0, false); setAutoplay(!autoplay); };
+  document.getElementById('flip').onclick = () => { azGoal = Math.round(azGoal / Math.PI) * Math.PI + Math.PI; viewSeat = Math.round(azGoal / Math.PI) % 2 ? 'b' : 'w'; dirty = true; };
+  for (const k of Object.keys(show)) {
+    const el = document.getElementById('show-' + k);
+    el.onchange = () => { show[k] = el.checked; dirty = true; };
+  }
+  const sndEl = document.getElementById('sound'), volEl = document.getElementById('volume');
+  sndEl.checked = Sound.on; volEl.value = Sound.vol;
+  sndEl.onchange = () => { Sound.setOn(sndEl.checked); if (sndEl.checked) Sound.play('move', 0.05, { type: 'n' }); };
+  volEl.oninput = () => Sound.setVol(Number(volEl.value));
+  volEl.onchange = () => Sound.play('move', 0, { type: 'n' });
+  const setEl = document.getElementById('pieceset');
+  for (const [k, v] of Object.entries(PIECE_SETS)) { const op = document.createElement('option'); op.value = k; op.textContent = v.label; setEl.appendChild(op); }
+  setEl.value = pieceSet;
+  setEl.onchange = () => { pieceSet = setEl.value; try { localStorage.setItem('skizze-set', pieceSet); } catch (e) {} dirty = true; };
+  document.getElementById('bgsel').onchange = (e) => setBackground(e.target.value);
+  document.getElementById('boil').onchange = (e) => { boilOn = e.target.checked; dirty = true; };
+  document.getElementById('speed').oninput = (e) => { autoDelay = Number(e.target.value); };
+  document.getElementById('loadpgn').onclick = () => loadGame(document.getElementById('pgn').value);
+  document.getElementById('lichessform').onsubmit = (e) => { e.preventDefault(); loadLichess(document.getElementById('lichessid').value); };
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea')) return;
+    if (e.key === 'ArrowRight') { setAutoplay(false); go(cur + 1); }
+    else if (e.key === 'ArrowLeft') { setAutoplay(false); go(cur - 1); }
+    else if (e.key === 'Home') { setAutoplay(false); go(0); }
+    else if (e.key === 'End') { setAutoplay(false); go(visLen()); }
+    else if (e.key === ' ') { e.preventDefault(); if (mode === 'replay') playBtn.click(); }
+    else if (e.key === 'f' || e.key === 'F') document.getElementById('flip').click();
+    else return;
+  });
+
+  // Kamera ziehen: seitlich um das Brett, hoch/runter
+  let drag = null;
+  let pdrag = null; // gegriffene Figur
+  const localXY = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  // Maus: links = Figuren, Mitte = Kamera, rechts = Zug abbrechen. Touch: Wischen auf leerer Fläche dreht.
+  function cancelMove() {
+    let did = false;
+    if (pdrag) { if (pdrag.moved) snapBack(pdrag); pdrag = null; canvas.style.cursor = ''; did = true; }
+    if (play.sel >= 0) { play.sel = -1; play.targets = []; did = true; }
+    if (!promoEl.hidden) { promoEl.hidden = true; if (pdragHold) { snapBack(pdragHold); pdragHold = null; } did = true; }
+    dirty = true;
+    return did;
+  }
+  canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelMove(); });
+  canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }); // kein Auto-Scrollen
+  canvas.addEventListener('auxclick', (e) => e.preventDefault());
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) { cancelMove(); return; }
+    canvas.setPointerCapture(e.pointerId);
+    if (e.button === 1) { e.preventDefault(); drag = { x: e.clientX, y: e.clientY, az: azGoal, el: cam.el, moved: false, camera: true }; canvas.style.cursor = 'move'; return; }
+    if (e.button !== 0) return;
+    const [sx, sy] = localXY(e);
+    const g = grabPiece(sx, sy);
+    if (g) {
+      const gp = groundAt(sx, sy) || sqWorld(g.sq);
+      pdrag = { ...g, x0: e.clientX, y0: e.clientY, x: gp[0], z: gp[1], moved: false };
+      return;
+    }
+    drag = { x: e.clientX, y: e.clientY, az: azGoal, el: cam.el, moved: false, camera: e.pointerType !== 'mouse' };
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    // rechte Taste während des Ziehens gedrückt: abbrechen
+    if (e.button === 2 && pdrag) { cancelMove(); return; }
+    if (pdrag) {
+      if (!pdrag.moved && Math.hypot(e.clientX - pdrag.x0, e.clientY - pdrag.y0) < 5) return;
+      if (!pdrag.moved) { pdrag.moved = true; play.sel = -1; play.targets = []; canvas.style.cursor = 'grabbing'; Sound.play('pickup'); }
+      const gp = groundAt(...localXY(e));
+      if (gp) { pdrag.x = Math.max(-4.4, Math.min(4.4, gp[0])); pdrag.z = Math.max(-4.4, Math.min(4.4, gp[1])); }
+      dirty = true;
+      return;
+    }
+    if (!drag) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+    drag.moved = true;
+    if (!drag.camera) return;
+    azGoal = drag.az - (e.clientX - drag.x) * 0.006;
+    cam.az = azGoal;
+    cam.el = Math.max(0.3, Math.min(1.35, drag.el + (e.clientY - drag.y) * 0.004));
+    dirty = true;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (pdrag) {
+      const d = pdrag; pdrag = null; canvas.style.cursor = '';
+      if (!d.moved) onBoardClick(...localXY(e));
+      else dropPiece(d);
+      return;
+    }
+    if (drag && !drag.moved && !drag.camera) onBoardClick(...localXY(e));
+    else if (drag && !drag.moved && e.pointerType !== 'mouse') onBoardClick(...localXY(e));
+    drag = null; canvas.style.cursor = '';
+  });
+  canvas.addEventListener('pointercancel', () => { if (pdrag) { snapBack(pdrag); pdrag = null; } drag = null; });
+  canvas.addEventListener('dblclick', () => { azGoal = Math.round(azGoal / Math.PI) * Math.PI; cam.el = (40 * Math.PI) / 180; cam.dist = 12.2; dirty = true; });
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.dist = Math.max(7, Math.min(20, cam.dist * (1 + e.deltaY * 0.001))); dirty = true; }, { passive: false });
+
+  // ---------- Selbst spielen ----------
+  const OPP = {
+    self: { label: 'Ich selbst', depth: 0 },
+    cpu1: { label: 'Computer (leicht)', depth: 2, noise: 90 },
+    cpu2: { label: 'Computer (mittel)', depth: 3, noise: 20 },
+  };
+  const curPos = () => play.positions[play.positions.length - 1];
+  const humanTurn = () => mode === 'play' && !play.over && !play.thinking && (play.opp === 'self' || curPos().turn === play.human);
+
+  function playHeaders() {
+    const me = 'Du', cpu = OPP[play.opp].label;
+    const h = { Event: 'Testpartie Skizzenbrett', Date: new Date().toISOString().slice(0, 10).replace(/-/g, '.') };
+    if (play.opp === 'self') { h.White = me; h.Black = me; }
+    else if (play.human === 'w') { h.White = me; h.Black = cpu; }
+    else { h.White = cpu; h.Black = me; }
+    h.Result = resultOf();
+    return h;
+  }
+  function resultOf() {
+    if (play.over === 'mate') return curPos().turn === 'w' ? '0-1' : '1-0';
+    if (play.over) return '1/2-1/2';
+    return '*';
+  }
+
+  function newPlayGame() {
+    play.token++;
+    const p0 = ChessCore.startPos();
+    play.positions = [p0];
+    play.over = null; play.thinking = false; play.sel = -1; play.targets = [];
+    play.game = { headers: {}, plies: [], states: [p0.board], captured: [[]] };
+    play.game.headers = playHeaders();
+    game = play.game; cur = 0; anim = null;
+    azGoal = play.human === 'w' ? 0 : Math.PI;
+    setPlayers(play.game.headers);
+    buildMoveList();
+    dirty = true;
+    maybeComputer();
+  }
+
+  function doMove(mv, dropAt) {
+    const pos = curPos();
+    const san = ChessCore.toSan(pos, mv);
+    const { pos: np, captured } = ChessCore.makeMove(pos, mv);
+    const st = ChessCore.status(np);
+    const g = play.game;
+    g.plies.push({ san, from: mv.from, to: mv.to, color: pos.turn, castle: mv.castle || null, promo: mv.promo || null, captured, check: st === 'check' || st === 'mate', mate: st === 'mate' });
+    g.states.push(np.board);
+    const prevCaps = g.captured[g.captured.length - 1];
+    g.captured.push(captured ? prevCaps.concat([captured]) : prevCaps);
+    play.positions.push(np);
+    play.over = st === 'mate' || st === 'stalemate' || st === 'material' ? st : null;
+    play.sel = -1; play.targets = [];
+    g.headers.Result = resultOf();
+    setPlayers(g.headers);
+    buildMoveList();
+    go(g.plies.length, true, dropAt ? { dur: 420 } : {});
+    if (dropAt && anim) {
+      const a = anim.A.get(dropAt.id);
+      if (a) anim.A.set(dropAt.id, { ...a, x: dropAt.x, z: dropAt.z, y0: 0.35 });
+    }
+    maybeComputer();
+  }
+
+  function maybeComputer() {
+    if (mode !== 'play' || play.over || play.opp === 'self' || curPos().turn === play.human) { updatePlayStatus(); return; }
+    play.thinking = true;
+    updatePlayStatus();
+    const token = ++play.token;
+    setTimeout(() => {
+      if (token !== play.token || mode !== 'play') return;
+      const o = OPP[play.opp];
+      const mv = ChessCore.bestMove(curPos(), o.depth, o.noise);
+      play.thinking = false;
+      if (mv) doMove(mv);
+    }, 750);
+  }
+
+  function undo() {
+    if (mode !== 'play' || !play.game.plies.length) return;
+    play.token++; play.thinking = false;
+    let n = play.game.plies.length - 1;
+    // gegen den Computer bis zum eigenen Zug zurück
+    if (play.opp !== 'self') while (n > 0 && play.positions[n].turn !== play.human) n--;
+    if (play.opp !== 'self' && play.positions[n].turn !== play.human) n = 0;
+    go(n);
+    const g = play.game;
+    g.plies.length = n; g.states.length = n + 1; g.captured.length = n + 1; play.positions.length = n + 1;
+    play.over = null; play.sel = -1; play.targets = [];
+    g.headers.Result = '*';
+    setPlayers(g.headers);
+    buildMoveList();
+    maybeComputer();
+  }
+
+  function updatePlayStatus() {
+    const el = document.getElementById('playmsg');
+    if (!el || mode !== 'play' || !play.game) return;
+    const pos = curPos();
+    const name = (c) => (c === 'w' ? 'Weiß' : 'Schwarz');
+    let t;
+    if (play.over === 'mate') t = `Schachmatt – ${name(pos.turn === 'w' ? 'b' : 'w')} gewinnt.`;
+    else if (play.over === 'stalemate') t = 'Patt – Remis.';
+    else if (play.over === 'material') t = 'Remis – zu wenig Material zum Mattsetzen.';
+    else if (play.thinking) t = 'Computer denkt …';
+    else if (play.opp === 'self') t = `${name(pos.turn)} am Zug.`;
+    else t = 'Du bist am Zug.';
+    if (!play.over && ChessCore.inCheck(pos)) t += ' Schach!';
+    el.textContent = t;
+  }
+
+  // ---- Klicks auf das Brett ----
+  function pointInPoly(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function pickCandidates(sx, sy) {
+    // Feld unter dem Zeiger zuerst, danach alle Figuren, deren Umriss getroffen wurde (vorderste zuerst)
+    const out = [];
+    const plane = planeSquare(sx, sy);
+    if (plane >= 0) out.push(plane);
+    const hits = hitList.slice().sort((a, b) => a.depth - b.depth);
+    for (const h of hits) if (!out.includes(h.sq) && h.parts.some((p) => pointInPoly(sx, sy, p))) out.push(h.sq);
+    return out;
+  }
+  function planeSquare(sx, sy) {
+    const dir = add(fwd, add(mul(right, (sx - W / 2) / cam.f), mul(up, (H * 0.5 - sy) / cam.f)));
+    if (dir[1] >= 0) return -1;
+    const t = -pos[1] / dir[1];
+    const x = pos[0] + t * dir[0], z = pos[2] + t * dir[2];
+    const f = Math.floor(x + 4), r = Math.floor(4 - z);
+    return f >= 0 && f < 8 && r >= 0 && r < 8 ? r * 8 + f : -1;
+  }
+  function onBoardClick(sx, sy) {
+    if (game && padClick(sx, sy)) return;
+    if (!game || anim) return;
+    const target = mode === 'play' && play.game ? play.game.plies.length : game.trainer && !game.trainer.done ? game.trainer.cur : -1;
+    if (target >= 0 && cur !== target) { go(target); return; }
+    const ctl = inputCtl();
+    if (!ctl) return;
+    const cands = pickCandidates(sx, sy);
+    const p0 = ctl.pos;
+    if (play.sel >= 0) {
+      for (const sq of cands) {
+        const ms = play.targets.filter((m) => m.to === sq);
+        if (ms.length > 1) { askPromotion(ms, null, ctl); return; }
+        if (ms.length === 1) { ctl.attempt(ms[0]); return; }
+      }
+    }
+    const sq = cands.find((q) => p0.board[q] && p0.board[q].c === p0.turn) ?? -1;
+    const p = sq >= 0 ? p0.board[sq] : null;
+    if (p && sq !== play.sel) {
+      play.sel = sq;
+      play.targets = ChessCore.legalMoves(p0).filter((m) => m.from === sq);
+    } else { play.sel = -1; play.targets = []; }
+    dirty = true;
+  }
+
+  const promoEl = document.getElementById('promo');
+  function askPromotion(ms, d, ctl) {
+    promoEl.hidden = false;
+    if (d) { pdragHold = d; dirty = true; }
+    promoEl.querySelectorAll('button[data-p]').forEach((b) => {
+      b.onclick = () => { promoEl.hidden = true; pdragHold = null; ctl.attempt(ms.find((m) => m.promo === b.dataset.p), d); };
+    });
+    document.getElementById('promo-cancel').onclick = () => { promoEl.hidden = true; if (d) { pdragHold = null; snapBack(d); } };
+  }
+  let pdragHold = null;
+
+  // Feld, auf dem die gezogene Figur landen würde: dick umrandet
+  function drawDropTarget(d) {
+    const f = Math.floor(d.x + 4), r = Math.floor(4 - d.z);
+    if (f < 0 || f > 7 || r < 0 || r > 7) return;
+    const [x, z] = sqWorld(r * 8 + f);
+    const sq = (e) => [[x - e, z + e], [x + e, z + e], [x + e, z - e], [x - e, z - e]].map(([a, b]) => P3(a, 0.005, b));
+    strokePts(sq(0.47), { closed: true, w: 4.2, alpha: 0.95, passes: 1, amp: 0.4, key: 4600 });
+    strokePts(sq(0.41), { closed: true, w: 1.6, alpha: 0.7, passes: 1, amp: 0.4, key: 4601 });
+  }
+
+  // ---- Figuren mit der Maus ziehen ----
+  function groundAt(sx, sy) {
+    // Schnittpunkt mit einer Ebene auf halber Figurenhöhe, damit die Figur "an der Hand" hängt
+    const dir = add(fwd, add(mul(right, (sx - W / 2) / cam.f), mul(up, (H * 0.5 - sy) / cam.f)));
+    const h = 0.45;
+    if (dir[1] >= 0) return null;
+    const t = (h - pos[1]) / dir[1];
+    return [pos[0] + t * dir[0], pos[2] + t * dir[2]];
+  }
+  function grabPiece(sx, sy) {
+    const ctl = inputCtl();
+    if (!ctl) return null;
+    const p0 = ctl.pos;
+    // sichtbarer Umriss zuerst (was man sieht, greift man), danach das Feld darunter
+    const hits = hitList.slice().sort((a, b) => a.depth - b.depth).filter((h) => h.parts.some((p) => pointInPoly(sx, sy, p))).map((h) => h.sq);
+    const plane = planeSquare(sx, sy);
+    const cands = hits.concat(plane >= 0 ? [plane] : []);
+    const sq = cands.find((q) => p0.board[q] && p0.board[q].c === p0.turn);
+    // ein Klick auf ein mögliches Zielfeld ist kein Greifen
+    if (sq === undefined || (play.sel >= 0 && play.targets.some((m) => m.to === sq))) return null;
+    return { sq, id: p0.board[sq].id };
+  }
+  function snapBack(d) {
+    const B = worldOf(cur);
+    const A = new Map(B);
+    const a = A.get(d.id);
+    if (a) A.set(d.id, { ...a, x: d.x, z: d.z, y0: 0.35 });
+    anim = { from: cur, to: cur, t0: performance.now(), dur: 380, A, B };
+    Sound.play('back', 0.34, { type: a ? a.t : 'p' });
+    dirty = true;
+  }
+  function dropPiece(d) {
+    const f = Math.floor(d.x + 4), r = Math.floor(4 - d.z);
+    const to = f >= 0 && f < 8 && r >= 0 && r < 8 ? r * 8 + f : -1;
+    const ctl = inputCtl();
+    if (!ctl) { snapBack(d); return; }
+    const ms = to < 0 ? [] : ChessCore.legalMoves(ctl.pos).filter((m) => m.from === d.sq && m.to === to);
+    if (!ms.length) { snapBack(d); return; }
+    if (ms.length > 1) { pendingDrop = d; askPromotion(ms, d, ctl); return; }
+    ctl.attempt(ms[0], d);
+  }
+  let pendingDrop = null;
+
+  function drawSelection() {
+    const [sx, sz] = sqWorld(play.sel);
+    strokePts(ellipsePts(sx, 0.004, sz, 0.46, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 1.8, alpha: 0.9, key: 4000 });
+    strokePts(ellipsePts(sx, 0.004, sz, 0.41, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 1.2, alpha: 0.7, key: 4001 });
+    if (!showTargets) return;
+    const seen = new Set();
+    const b = game.states[cur];
+    for (const m of play.targets) {
+      if (seen.has(m.to)) continue;
+      seen.add(m.to);
+      const [x, z] = sqWorld(m.to);
+      if (b[m.to] || m.castle) {
+        strokePts(ellipsePts(x, 0.004, z, 0.44, 0, Math.PI * 2, 32), { closed: true, w: 1.6, alpha: 0.75, key: 4100 + m.to });
+      } else {
+        const pts = ellipsePts(x, 0.004, z, 0.12, 0, Math.PI * 2, 18);
+        ctx.beginPath(); polyPath(pts); ctx.fillStyle = INK; ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1;
+        strokePts(pts, { closed: true, w: 1, alpha: 0.6, passes: 1, key: 4200 + m.to });
+      }
+    }
+  }
+
+  function exportPgn() {
+    const g = play.game;
+    const h = playHeaders();
+    let out = Object.entries(h).map(([k, v]) => `[${k} "${v}"]`).join('\n') + '\n\n';
+    const parts = [];
+    g.plies.forEach((p, i) => { if (i % 2 === 0) parts.push(i / 2 + 1 + '.'); parts.push(p.san); });
+    parts.push(h.Result);
+    return out + parts.join(' ');
+  }
+
+  document.getElementById('tab-replay').onclick = () => setMode('replay');
+  document.getElementById('tab-play').onclick = () => setMode('play');
+  let showTargets = false;
+  document.getElementById('show-targets').onchange = (e) => { showTargets = e.target.checked; dirty = true; };
+  document.getElementById('newgame').onclick = () => newPlayGame();
+  document.getElementById('undo').onclick = () => undo();
+  document.getElementById('mycolor').onchange = (e) => { play.human = e.target.value; newPlayGame(); };
+  document.getElementById('opponent').onchange = (e) => {
+    play.opp = e.target.value;
+    if (play.game) { play.game.headers = playHeaders(); setPlayers(play.game.headers); }
+    play.token++; play.thinking = false;
+    maybeComputer();
+  };
+  document.getElementById('copypgn').onclick = async () => {
+    const txt = exportPgn();
+    const out = document.getElementById('pgnout');
+    out.value = txt;
+    try {
+      await navigator.clipboard.writeText(txt);
+      document.getElementById('playmsg2').textContent = 'PGN kopiert. Bei lichess kannst du sie unter lichess.org/paste importieren und analysieren.';
+    } catch (e) {
+      document.getElementById('pgnoutbox').open = true;
+      out.select();
+      document.getElementById('playmsg2').textContent = 'Kopieren war nicht erlaubt – die PGN steht unten zum Markieren bereit.';
+    }
+  };
+
+  // ---------- Eingabe: wer darf gerade ziehen, und was passiert mit dem Zug? ----------
+  function inputCtl() {
+    if (!game || anim) return null;
+    if (mode === 'play') {
+      if (!play.game || cur !== play.game.plies.length || !humanTurn()) return null;
+      return { pos: curPos(), attempt: (mv, d) => doMove(mv, d) };
+    }
+    if (mode === 'live') {
+      if (!live.game || game !== live.game || !liveRunning() || live.sending || cur !== game.plies.length) return null;
+      const pos = game.positions[cur];
+      if (pos.turn !== live.color) return null;
+      return { pos, attempt: (mv, d) => liveMove(mv, d) };
+    }
+    const tr = game.trainer;
+    if ((mode === 'puzzle' || mode === 'study') && tr && !tr.done && !tr.waiting && cur === tr.cur) {
+      const pos = game.positions[cur];
+      if (pos.turn !== tr.color) return null;
+      return { pos, attempt: (mv, d) => trainerAttempt(mv, d) };
+    }
+    return null;
+  }
+  // wie viele Züge darf die Zugliste zeigen (keine Lösung verraten)
+  const visLen = () => (game && game.trainer && !game.trainer.done ? game.trainer.cur : game ? game.plies.length : 0);
+
+  function animateDrop(d) {
+    if (d && anim) {
+      const a = anim.A.get(d.id);
+      if (a) anim.A.set(d.id, { ...a, x: d.x, z: d.z, y0: 0.35 });
+    }
+  }
+
+  // ---------- Training: Puzzles und Studien zum Mitspielen ----------
+  let trainerTimer = null;
+  const sameMove = (a, b) => a.from === b.from && a.to === b.to && (a.promo || null) === (b.promo || null);
+
+  function startTrainer(kind, color, fromPly) {
+    game.trainer = { kind, color, cur: fromPly, start: fromPly, done: false, waiting: false, mistakes: 0, hintSq: -1, solved: false };
+    play.sel = -1; play.targets = [];
+    azGoal = color === 'w' ? 0 : Math.PI;
+    buildMoveList();
+    trainerStep();
+  }
+
+  function trainerFeedback(text, tone = '') {
+    const el = document.getElementById(mode === 'puzzle' ? 'pzmsg' : 'stmsg');
+    if (el) { el.textContent = text; el.className = 'trainmsg ' + tone; }
+  }
+
+  // Gegnerzüge automatisch, bis der Spieler dran ist
+  function trainerStep() {
+    const tr = game.trainer;
+    if (!tr) return;
+    clearTimeout(trainerTimer);
+    if (tr.cur >= game.plies.length) {
+      tr.done = true; tr.waiting = false;
+      tr.solved = true;
+      const t = tr.kind === 'puzzle'
+        ? (tr.mistakes ? `Gelöst – mit ${tr.mistakes} Fehlversuch${tr.mistakes > 1 ? 'en' : ''}.` : tr.hints ? 'Gelöst – mit Tipp.' : 'Gelöst! Fehlerfrei.')
+        : (tr.mistakes ? `Linie geschafft – ${tr.mistakes} Abweichung${tr.mistakes > 1 ? 'en' : ''}.` : 'Linie fehlerfrei nachgespielt!');
+      trainerFeedback(t, 'good');
+      buildMoveList();
+      if (tr.kind === 'puzzle') Sound.play('end', 0.5);
+      if (tr.rated) {
+        ratedReport(tr, !tr.mistakes && !tr.hints);
+        const js = tr.rated.info;
+        if (js) showPuzzleInfo(js);
+      }
+      updateTrainerButtons();
+      return;
+    }
+    const pos = game.positions[tr.cur];
+    if (pos.turn !== tr.color) {
+      tr.waiting = true;
+      trainerTimer = setTimeout(() => {
+        if (!game.trainer || game.trainer !== tr) return;
+        if (cur !== tr.cur) go(tr.cur, false);
+        tr.cur++;
+        buildMoveList();
+        go(tr.cur);
+        tr.waiting = false;
+        trainerStep();
+      }, cur === tr.cur ? 650 : 50);
+      return;
+    }
+    tr.waiting = false;
+    if (tr.kind === 'puzzle' && !tr.mistakes && tr.cur === tr.start) trainerFeedback(`Du spielst ${pos.turn === 'w' ? 'Weiß' : 'Schwarz'} – finde den besten Zug.`);
+    else if (tr.kind === 'puzzle') trainerFeedback('Gut – weiter so. Wie geht es weiter?', 'good');
+    else trainerFeedback(`Welchen Zug spielt ${pos.turn === 'w' ? 'Weiß' : 'Schwarz'} hier?`);
+    updateTrainerButtons();
+  }
+
+  function trainerAttempt(mv, d) {
+    const tr = game.trainer;
+    const exp = game.plies[tr.cur];
+    const pos = game.positions[tr.cur];
+    let ok = sameMove(mv, exp);
+    // beim letzten Zug zählt jedes Matt
+    if (!ok && tr.cur === game.plies.length - 1 && exp.mate) {
+      const np = ChessCore.makeMove(pos, mv).pos;
+      if (ChessCore.status(np) === 'mate') {
+        ok = true;
+        // Partie an dieser Stelle durch den gespielten Zug ersetzen
+        game.plies.length = tr.cur; game.states.length = tr.cur + 1; game.positions.length = tr.cur + 1; game.captured.length = tr.cur + 1;
+        ChessCore.pushMove(game, mv);
+      }
+    }
+    play.sel = -1; play.targets = []; tr.hintSq = -1;
+    if (!ok) {
+      tr.mistakes++;
+      ratedReport(tr, false);
+      if (d) snapBack(d); else Sound.play('back', 0, { type: pos.board[mv.from].t });
+      trainerFeedback(tr.kind === 'puzzle' ? 'Das ist nicht der Zug. Versuch es noch einmal.' : `Nicht der Zug aus der Studie (dort: ${exp.san}). Versuch es noch einmal.`, 'bad');
+      dirty = true;
+      return;
+    }
+    tr.cur++;
+    buildMoveList();
+    go(tr.cur, true, d ? { dur: 420 } : {});
+    animateDrop(d);
+    trainerFeedback('Richtig!', 'good');
+    trainerTimer = setTimeout(() => trainerStep(), 250);
+  }
+
+  function trainerHint() {
+    const tr = game && game.trainer;
+    if (!tr || tr.done) return;
+    if (cur !== tr.cur) go(tr.cur);
+    tr.hintSq = game.plies[tr.cur].from;
+    tr.hints = (tr.hints || 0) + 1;
+    ratedReport(tr, false);
+    play.sel = -1;
+    trainerFeedback('Tipp: Die markierte Figur zieht.', '');
+    dirty = true;
+  }
+  function trainerShowMove() {
+    const tr = game && game.trainer;
+    if (!tr || tr.done || tr.waiting || game.positions[tr.cur].turn !== tr.color) return;
+    if (cur !== tr.cur) go(tr.cur, false);
+    tr.mistakes++;
+    ratedReport(tr, false);
+    tr.hintSq = -1;
+    const exp = game.plies[tr.cur];
+    tr.cur++;
+    buildMoveList();
+    go(tr.cur);
+    trainerFeedback(`Lösung: ${exp.san}`, 'bad');
+    trainerTimer = setTimeout(() => trainerStep(), 900);
+  }
+  function updateTrainerButtons() {
+    const tr = game && game.trainer;
+    for (const id of ['pz-hint', 'pz-show', 'st-hint', 'st-show']) {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !tr || tr.done;
+    }
+  }
+
+  // ---------- Puzzles ----------
+  const OFFLINE_PUZZLES = [{"id": "s1", "title": "Grundreihenmatt", "fen": "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1", "solution": ["d1d8"], "themes": ["mateIn1", "backRankMate"]}, {"id": "s2", "title": "Schäfermatt", "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4", "solution": ["h5f7"], "themes": ["mateIn1", "opening"]}, {"id": "s3", "title": "Ersticktes Matt", "fen": "6rk/6pp/8/6N1/8/8/6PP/6K1 w - - 0 1", "solution": ["g5f7"], "themes": ["mateIn1", "smotheredMate"]}, {"id": "s4", "title": "Arabisches Matt", "fen": "7k/R7/5N2/8/8/8/6PP/6K1 w - - 0 1", "solution": ["a7h7"], "themes": ["mateIn1", "arabianMate"]}, {"id": "s5", "title": "Anastasias Matt", "fen": "5r2/4Nppk/8/8/8/8/PP6/K3R3 w - - 0 1", "solution": ["e1h1"], "themes": ["mateIn1", "anastasiaMate"]}, {"id": "s7", "title": "Damenopfer am Königsflügel", "fen": "r1b2k1r/ppppq3/5N1p/4P2Q/4PP2/1B6/PP5P/n2K2R1 w - - 0 1", "solution": ["h5h6", "h8h6", "g1g8"], "themes": ["mateIn2", "sacrifice"]}, {"id": "s8", "title": "Turmopfer für Schwarz", "fen": "6k1/pp4p1/2p5/2bp4/8/P5Pb/1P3rrP/2BRRN1K b - - 0 1", "solution": ["g2g1", "h1g1", "f2f1"], "themes": ["mateIn2", "sacrifice"]}, {"id": "s6", "title": "Philidors Vermächtnis", "fen": "5rk1/5Npp/8/8/8/1Q6/6PP/6K1 w - - 0 1", "solution": ["f7h6", "g8h8", "b3g8", "f8g8", "h6f7"], "themes": ["mateIn3", "smotheredMate", "sacrifice"]}];
+  let offlineIdx = 0;
+  const THEMES = {
+    mate: 'Matt', mateIn1: 'Matt in 1', mateIn2: 'Matt in 2', mateIn3: 'Matt in 3', mateIn4: 'Matt in 4', mateIn5: 'Matt in 5+',
+    fork: 'Gabel', pin: 'Fesselung', skewer: 'Spieß', sacrifice: 'Opfer', discoveredAttack: 'Abzugsangriff', doubleCheck: 'Doppelschach',
+    backRankMate: 'Grundreihenmatt', smotheredMate: 'Ersticktes Matt', arabianMate: 'Arabisches Matt', anastasiaMate: 'Anastasias Matt',
+    hangingPiece: 'Hängende Figur', trappedPiece: 'Gefangene Figur', deflection: 'Ablenkung', attraction: 'Hinlenkung', clearance: 'Räumung',
+    interference: 'Verstellung', intermezzo: 'Zwischenzug', quietMove: 'Stiller Zug', defensiveMove: 'Verteidigung', zugzwang: 'Zugzwang',
+    endgame: 'Endspiel', middlegame: 'Mittelspiel', opening: 'Eröffnung', short: 'kurz', long: 'lang', veryLong: 'sehr lang', oneMove: 'ein Zug',
+    advantage: 'Vorteil', crushing: 'entscheidend', equality: 'Ausgleich', promotion: 'Umwandlung', underPromotion: 'Unterverwandlung',
+    kingsideAttack: 'Angriff am Königsflügel', queensideAttack: 'Angriff am Damenflügel', attackingF2F7: 'Angriff auf f2/f7',
+    rookEndgame: 'Turmendspiel', pawnEndgame: 'Bauernendspiel', queenEndgame: 'Damenendspiel', bishopEndgame: 'Läuferendspiel', knightEndgame: 'Springerendspiel',
+    exposedKing: 'Offener König', capturingDefender: 'Verteidiger schlagen', xRayAttack: 'Röntgenangriff', master: 'Meisterpartie',
+  };
+
+  function showPuzzleInfo(info) {
+    const el = document.getElementById('pzinfo');
+    el.innerHTML = '';
+    const t = document.createElement('div'); t.className = 'pztitle'; t.textContent = info.title; el.appendChild(t);
+    if (info.rating) { const r = document.createElement('div'); r.textContent = `Wertung ${info.rating}` + (info.plays ? ` · ${info.plays.toLocaleString('de-DE')}× gespielt` : ''); el.appendChild(r); }
+    if (info.themes && info.themes.length) { const th = document.createElement('div'); th.className = 'meta'; th.textContent = info.themes.map((x) => THEMES[x] || x).join(' · '); el.appendChild(th); }
+    if (info.link) { const a = document.createElement('a'); a.href = info.link; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Auf Lichess öffnen ↗'; el.appendChild(a); }
+  }
+
+  function loadOfflinePuzzle(i) {
+    offlineIdx = (i + OFFLINE_PUZZLES.length) % OFFLINE_PUZZLES.length;
+    const pz = OFFLINE_PUZZLES[offlineIdx];
+    const start = ChessCore.fromFen(pz.fen);
+    const g = ChessCore.gameFromPos(start, { Event: 'Puzzle: ' + pz.title });
+    let pos = start;
+    for (const u of pz.solution) { const mv = ChessCore.uciToMove(pos, u); ChessCore.pushMove(g, mv); pos = g.positions[g.positions.length - 1]; }
+    setGame(g, 0);
+    setPlayers({ White: start.turn === 'w' ? 'Du' : 'Puzzle', Black: start.turn === 'b' ? 'Du' : 'Puzzle', Event: `Beispiel ${offlineIdx + 1} von ${OFFLINE_PUZZLES.length}` });
+    showPuzzleInfo({ title: pz.title, themes: pz.themes });
+    startTrainer('puzzle', start.turn, 0);
+    game.trainer.start = 0;
+  }
+
+  function loadLichessPuzzleJson(js) {
+    const g = ChessCore.loadPgn(js.game.pgn);
+    let pos = g.positions[g.positions.length - 1];
+    const startPly = g.plies.length;
+    for (const u of js.puzzle.solution) { const mv = ChessCore.uciToMove(pos, u); ChessCore.pushMove(g, mv); pos = g.positions[g.positions.length - 1]; }
+    const color = g.positions[startPly].turn;
+    const players = js.game.players || [];
+    const pn = (c) => { const p = players.find((x) => x.color === (c === 'w' ? 'white' : 'black')); return p ? `${p.name}${p.rating ? ' (' + p.rating + ')' : ''}` : ''; };
+    g.headers = { White: pn('w'), Black: pn('b'), Event: 'Lichess-Puzzle #' + js.puzzle.id };
+    setGame(g, Math.max(0, startPly - 1));
+    setPlayers(g.headers);
+    showPuzzleInfo({ title: 'Puzzle #' + js.puzzle.id, rating: js.puzzle.rating, plays: js.puzzle.plays, themes: js.puzzle.themes, link: 'https://lichess.org/training/' + js.puzzle.id });
+    game.trainer = { kind: 'puzzle', color, cur: Math.max(0, startPly - 1), done: false, waiting: true, mistakes: 0, hintSq: -1, start: startPly };
+    azGoal = color === 'w' ? 0 : Math.PI;
+    buildMoveList();
+    // letzten Zug des Gegners zeigen, dann ist der Spieler dran
+    trainerFeedback('Der Gegner zieht …');
+    trainerTimer = setTimeout(() => { const tr = game.trainer; tr.cur = startPly; buildMoveList(); go(startPly); tr.waiting = false; trainerStep(); }, 700);
+  }
+
+  async function fetchLichess(url, accept) {
+    const res = await fetch(url, { headers: { Accept: accept } });
+    if (!res.ok) throw new Error(res.status === 404 ? 'Bei Lichess nicht gefunden.' : 'Lichess antwortet mit Fehler ' + res.status);
+    return res;
+  }
+  const BLOCKED = 'Die Vorschau hier darf Lichess nicht direkt abfragen. Öffne die Datei lokal im Browser, dann funktioniert es – bis dahin kannst du die Beispiel-Puzzles nutzen.';
+  async function loadLichessPuzzle(kind, id) {
+    trainerFeedback('Lade Puzzle von Lichess …');
+    const url = kind === 'daily' ? 'https://lichess.org/api/puzzle/daily' : kind === 'next' ? 'https://lichess.org/api/puzzle/next' : 'https://lichess.org/api/puzzle/' + encodeURIComponent(id);
+    try {
+      const js = await (await fetchLichess(url, 'application/json')).json();
+      if (mode !== 'puzzle') return;
+      loadLichessPuzzleJson(js);
+    } catch (err) {
+      trainerFeedback(err instanceof TypeError ? BLOCKED : err.message, 'bad');
+    }
+  }
+
+  // ---------- Studien ----------
+  const SAMPLE_STUDY = "[Event \"Skizzenbrett-Studie: Kapitel 1\"]\n[ChapterName \"Italienisch – die Grundidee\"]\n[Orientation \"white\"]\n\n{ Beide Seiten besetzen das Zentrum und entwickeln die Leichtfiguren. Achte darauf, welche Felder die Figuren angreifen. [%csl Gd4,Ge4,Gd5,Ge5] }\n1. e4 { Weiß nimmt sich das Zentrum und öffnet Läufer und Dame den Weg. [%cal Gf1c4,Gd1h5] }\n1... e5 2. Nf3 { Entwickelt mit Tempo: Der Springer greift e5 an. [%cal Gf3e5] }\n2... Nc6 { Die natürlichste Deckung. } (2... d6 { Die Philidor-Verteidigung ist solide, aber passiver. })\n3. Bc4 { Der Läufer zielt auf f7 – den schwächsten Punkt neben dem schwarzen König. [%cal Rc4f7] [%csl Rf7] }\n3... Bc5 { Schwarz antwortet symmetrisch und zielt seinerseits auf f2. [%cal Rc5f2] }\n(3... Nf6 { Das Zweispringerspiel – deutlich schärfer. } 4. Ng5 d5 5. exd5)\n4. c3 { Bereitet d4 vor, um das Zentrum mit Bauern zu besetzen. [%cal Gd2d4] }\n4... Nf6 5. d4 { Der klassische Zentrumsvorstoß. } 5... exd4 6. cxd4 Bb4+ { Schwarz gewinnt Zeit mit einem Schach. } 7. Nc3 { Jetzt stehen beide Springer im Spiel. } *\n\n[Event \"Skizzenbrett-Studie: Kapitel 2\"]\n[ChapterName \"Seekadettenmatt\"]\n[Orientation \"white\"]\n\n{ Eine berühmte Falle: Weiß opfert die Dame und setzt mit den Leichtfiguren matt. }\n1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 { Der Läufer fesselt den Springer an die Dame – scheinbar. [%cal Rg4d1] }\n4. Nc3 g6? { Schwarz übersieht die Gefahr. }\n5. Nxe5! { Weiß opfert die Dame! [%cal Ge5f7,Gc4f7] }\n5... Bxd1?? { Gierig. Besser war 5...dxe5 mit nur einem Bauern Rückstand. } (5... dxe5 6. Qxg4)\n6. Bxf7+ { Der König wird ins Freie getrieben. } 6... Ke7 7. Nd5# { Matt durch drei Leichtfiguren. [%csl Re7] } 1-0\n\n[Event \"Skizzenbrett-Studie: Kapitel 3\"]\n[ChapterName \"Turmendspiel: Brückenbau (Lucena)\"]\n[FEN \"1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1\"]\n[SetUp \"1\"]\n[Orientation \"white\"]\n\n{ Die Lucena-Stellung: Weiß gewinnt, indem er mit dem Turm eine Brücke baut, die den König vor Schachs schützt. }\n1. Rd1+ { Zuerst wird der schwarze König abgedrängt. } 1... Ke7 2. Rd4! { Der Turm geht auf die vierte Reihe – das ist die Brücke. [%cal Gd1d4] }\n2... Ra1 3. Kc7 Rc1+ 4. Kb6 Rb1+ 5. Kc6 Rc1+ 6. Kb5 Rb1+ 7. Rb4 { Die Brücke steht: Der Turm blockt das Schach, und der Bauer wandelt um. [%csl Gb4] } 1-0\n";
+  let studyChapters = [];
+  function loadStudyText(text, name) {
+    const msg = document.getElementById('stmsg');
+    try {
+      const parts = ChessCore.splitGames(text);
+      if (!parts.length) throw new Error('Keine Kapitel gefunden.');
+      studyChapters = parts.map((p, i) => {
+        const h = (p.match(/\[ChapterName\s+"([^"]*)"\]/) || p.match(/\[Event\s+"([^"]*)"\]/) || [])[1];
+        return { pgn: p, name: h || 'Kapitel ' + (i + 1) };
+      });
+      const sel = document.getElementById('chapter');
+      sel.innerHTML = '';
+      studyChapters.forEach((c, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${i + 1}. ${c.name}`; sel.appendChild(o); });
+      document.getElementById('studyname').textContent = name || '';
+      loadChapter(0);
+    } catch (err) { msg.textContent = err.message; msg.className = 'trainmsg bad'; }
+  }
+  function loadChapter(i) {
+    const msg = document.getElementById('stmsg');
+    try {
+      const g = ChessCore.loadPgn(studyChapters[i].pgn);
+      document.getElementById('chapter').value = i;
+      setGame(g, 0);
+      setPlayers({ White: g.headers.White && g.headers.White !== '?' ? g.headers.White : '', Black: g.headers.Black && g.headers.Black !== '?' ? g.headers.Black : '', Event: studyChapters[i].name });
+      const orient = (g.headers.Orientation || '').toLowerCase();
+      azGoal = orient === 'black' ? Math.PI : 0;
+      viewSeat = orient === 'black' ? 'b' : 'w';
+      document.getElementById('st-train').checked = false;
+      msg.textContent = g.plies.length ? 'Mit den Pfeiltasten durch das Kapitel – oder „Mitspielen“ einschalten.' : 'Dieses Kapitel enthält keine Züge.';
+      msg.className = 'trainmsg';
+      updateStudyComment();
+      updateTrainerButtons();
+    } catch (err) { msg.textContent = 'Kapitel konnte nicht gelesen werden: ' + err.message; msg.className = 'trainmsg bad'; }
+  }
+  function updateStudyComment() {
+    const box = document.getElementById('stcomment');
+    if (!box || mode !== 'study' || !game) return;
+    box.innerHTML = '';
+    const tr = game.trainer;
+    const p = cur > 0 ? game.plies[cur - 1] : null;
+    const txt = cur === 0 ? game.intro : p && p.comment;
+    // im Mitspiel-Modus den Kommentar erst nach dem Zug zeigen (verrät sonst nichts)
+    if (txt) { const d = document.createElement('div'); d.textContent = txt; box.appendChild(d); }
+    if (p && p.variations && p.variations.length && (!tr || tr.done || cur <= tr.cur)) {
+      const v = document.createElement('div'); v.className = 'meta';
+      v.textContent = 'Statt ' + p.san + ' auch: ' + p.variations.join('  ·  ');
+      box.appendChild(v);
+    }
+    if (!box.childNodes.length) { const d = document.createElement('div'); d.className = 'meta'; d.textContent = 'Kein Kommentar zu diesem Zug.'; box.appendChild(d); }
+  }
+  function parseStudyRef(s) {
+    const m = s.trim().match(/(?:study\/)?([A-Za-z0-9]{8})(?:\/([A-Za-z0-9]{8}))?/);
+    return m ? { study: m[1], chapter: m[2] } : null;
+  }
+  async function loadLichessStudy(input) {
+    const ref = parseStudyRef(input);
+    const msg = document.getElementById('stmsg');
+    if (!ref) { msg.textContent = 'Das sieht nicht nach einem Lichess-Studienlink aus.'; msg.className = 'trainmsg bad'; return; }
+    msg.textContent = 'Lade Studie von Lichess …'; msg.className = 'trainmsg';
+    const url = `https://lichess.org/api/study/${ref.study}${ref.chapter ? '/' + ref.chapter : ''}.pgn?comments=true&variations=true&clocks=false`;
+    try {
+      const txt = await (await fetchLichess(url, 'application/x-chess-pgn')).text();
+      if (mode !== 'study') return;
+      loadStudyText(txt, 'Lichess-Studie ' + ref.study);
+    } catch (err) {
+      msg.className = 'trainmsg bad';
+      msg.textContent = err instanceof TypeError ? 'Die Vorschau hier darf Lichess nicht direkt abfragen. Exportiere die Studie bei Lichess als PGN und füge sie unten ein – oder öffne die Datei lokal, dann klappt der Link.' : err.message;
+      document.getElementById('studypgnbox').open = true;
+    }
+  }
+
+  // ---------- Pfeile und Kreise aus der Studie ----------
+  function drawShapes() {
+    if (!game || !show.shapes) return;
+    const shapes = cur === 0 ? game.introShapes || [] : (game.plies[cur - 1] && game.plies[cur - 1].shapes) || [];
+    if (!shapes.length) return;
+    if (game.trainer && !game.trainer.done && cur >= game.trainer.cur) return; // nichts verraten
+    shapes.forEach((sh, i) => {
+      const red = sh.color === 'R';
+      const o = { color: red ? RED : INK, w: red ? 2.2 : 2, alpha: red ? 0.75 : 0.65, key: 5000 + i * 13 };
+      if (sh.kind === 'circle') {
+        const [x, z] = sqWorld(sh.sq);
+        strokePts(ellipsePts(x, 0.004, z, 0.42, 0, Math.PI * 2, 30), { ...o, closed: true });
+        if (!red) strokePts(ellipsePts(x, 0.004, z, 0.36, 0, Math.PI * 2, 30), { ...o, closed: true, w: 1, passes: 1 });
+      } else {
+        const [x0, z0] = sqWorld(sh.from), [x1, z1] = sqWorld(sh.to);
+        const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L;
+        const a = [x0 + ux * 0.2, z0 + uz * 0.2], b = [x1 - ux * 0.22, z1 - uz * 0.22];
+        strokePts([a, b].map(([x, z]) => P3(x, 0.004, z)), o);
+        for (const sgn of [1, -1]) {
+          const h = [b[0] - ux * 0.3 - uz * 0.18 * sgn, b[1] - uz * 0.3 + ux * 0.18 * sgn];
+          strokePts([b, h].map(([x, z]) => P3(x, 0.004, z)), { ...o, key: o.key + (sgn > 0 ? 1 : 2) });
+        }
+      }
+    });
+  }
+  function drawHint() {
+    const tr = game && game.trainer;
+    if (!tr || tr.hintSq < 0 || tr.done) return;
+    const [x, z] = sqWorld(tr.hintSq);
+    strokePts(ellipsePts(x, 0.004, z, 0.47, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 2, alpha: 0.85, key: 4400 });
+    strokePts(ellipsePts(x, 0.004, z, 0.4, 0, Math.PI * 2, 32), { closed: true, color: RED, w: 1.2, alpha: 0.6, key: 4401 });
+  }
+
+  // ---------- Modus-Verwaltung ----------
+  const modeSave = {};
+  function setGame(g, at) {
+    clearTimeout(trainerTimer);
+    game = g; cur = at; anim = null; play.sel = -1; play.targets = [];
+    buildMoveList();
+    dirty = true;
+  }
+  function setMode(m) {
+    if (m === mode) return;
+    setAutoplay(false);
+    clearTimeout(trainerTimer);
+    if (game && game.trainer) game.trainer.waiting = false;
+    play.token++; play.thinking = false;
+    modeSave[mode] = { game, cur, az: azGoal };
+    mode = m;
+    play.sel = -1; play.targets = [];
+    const saved = modeSave[m];
+    if (m === 'play' && !play.game) newPlayGame();
+    else if (saved && saved.game) {
+      game = saved.game; cur = saved.cur; anim = null; azGoal = saved.az;
+      setPlayers(game.headers); buildMoveList();
+      if (m === 'play') maybeComputer();
+      if (game.trainer && !game.trainer.done) { if (cur !== game.trainer.cur) go(game.trainer.cur, false); trainerStep(); }
+    } else if (m === 'live') {
+      setGame(live.game || ChessCore.gameFromPos(ChessCore.startPos(), {}), live.game ? live.game.plies.length : 0);
+      if (!live.game) setPlayers({ White: '', Black: '', Event: 'Noch keine Live-Partie' });
+    } else if (m === 'puzzle') loadOfflinePuzzle(0);
+    else if (m === 'study') loadStudyText(SAMPLE_STUDY, 'Beispielstudie');
+    else { azGoal = 0; }
+    document.body.className = document.body.className.replace(/\bm-\w+/g, '').trim() + ' m-' + m;
+    for (const t of ['replay', 'play', 'puzzle', 'study', 'live']) document.getElementById('tab-' + t).setAttribute('aria-selected', t === m);
+    if (m === 'live') { renderLiveAccount(); renderLive(); startEventStream(); refreshPlaying(); }
+    if (m === 'study') updateStudyComment();
+    updateTrainerButtons();
+    dirty = true;
+  }
+
+  document.getElementById('tab-puzzle').onclick = () => setMode('puzzle');
+  document.getElementById('tab-study').onclick = () => setMode('study');
+  document.getElementById('pz-daily').onclick = () => loadLichessPuzzle('daily');
+  document.getElementById('pz-next').onclick = () => loadLichessPuzzle('next');
+  document.getElementById('pz-idform').onsubmit = (e) => {
+    e.preventDefault();
+    const v = document.getElementById('pz-id').value.trim();
+    const m = v.match(/(?:training\/)?([A-Za-z0-9]{5})\b/);
+    if (m) loadLichessPuzzle('id', m[1]); else trainerFeedback('Eine Puzzle-ID hat fünf Zeichen, z. B. „K69di“.', 'bad');
+  };
+  document.getElementById('pz-offline').onclick = () => loadOfflinePuzzle(game && game.trainer && game.trainer.kind === 'puzzle' && game.headers.Event && game.headers.Event.startsWith('Puzzle:') ? offlineIdx + 1 : 0);
+  document.getElementById('pz-retry').onclick = () => {
+    const tr = game && game.trainer; if (!tr) return;
+    if (game.headers.Event && game.headers.Event.startsWith('Puzzle:')) loadOfflinePuzzle(offlineIdx);
+    else { const start = tr.start; game.trainer = { ...tr, cur: start, done: false, waiting: false, mistakes: 0, hintSq: -1 }; go(start); buildMoveList(); trainerStep(); }
+  };
+  document.getElementById('pz-hint').onclick = trainerHint;
+  document.getElementById('pz-show').onclick = trainerShowMove;
+  document.getElementById('st-hint').onclick = trainerHint;
+  document.getElementById('st-show').onclick = trainerShowMove;
+  document.getElementById('chapter').onchange = (e) => loadChapter(Number(e.target.value));
+  document.getElementById('st-form').onsubmit = (e) => { e.preventDefault(); loadLichessStudy(document.getElementById('st-id').value); };
+  document.getElementById('st-loadpgn').onclick = () => loadStudyText(document.getElementById('st-pgn').value, 'Eingefügte Studie');
+  document.getElementById('st-sample').onclick = () => loadStudyText(SAMPLE_STUDY, 'Beispielstudie');
+  const stTrain = document.getElementById('st-train'), stColor = document.getElementById('st-color');
+  function applyStudyTraining() {
+    if (!game || mode !== 'study') return;
+    clearTimeout(trainerTimer);
+    if (stTrain.checked) {
+      const color = stColor.value === 'auto' ? game.positions[cur].turn : stColor.value;
+      startTrainer('study', color, cur);
+      game.trainer.start = cur;
+    } else { game.trainer = null; buildMoveList(); document.getElementById('stmsg').textContent = ''; }
+    updateStudyComment(); updateTrainerButtons(); dirty = true;
+  }
+  stTrain.onchange = applyStudyTraining;
+  stColor.onchange = () => { if (stTrain.checked) applyStudyTraining(); };
+
+  // ---------- Gewertete Puzzles mit persönlichem Lichess-Token ----------
+  const LI = { token: null, user: null, rating: null, queue: [], busy: false };
+  try { LI.token = localStorage.getItem('skizze-li-token'); } catch (e) {}
+  const liEl = (id) => document.getElementById(id);
+
+  async function liFetch(path, opts = {}) {
+    let res;
+    try {
+      res = await fetch('https://lichess.org' + path, { ...opts, headers: { Authorization: 'Bearer ' + LI.token, ...(opts.headers || {}) } });
+    } catch (e) {
+      throw new Error('Lichess ist von hier aus nicht erreichbar. In der Vorschau ist das gesperrt – öffne die Datei lokal im Browser.');
+    }
+    if (res.status === 401 || res.status === 403) throw new Error('Lichess lehnt den Token ab. Hat er die Rechte „Puzzles lesen“ und „Puzzles schreiben“?');
+    if (res.status === 429) throw new Error('Zu viele Anfragen – bitte kurz warten.');
+    if (!res.ok) throw new Error('Lichess antwortet mit Fehler ' + res.status);
+    return res;
+  }
+
+  function renderAccount() {
+    const on = !!(LI.token && LI.user);
+    liEl('li-login').hidden = on;
+    liEl('li-account').hidden = !on;
+    if (on) liEl('li-who').textContent = `${LI.user} · Puzzle-Rating ${LI.rating ? Math.round(LI.rating) : '–'}`;
+    renderLiveAccount();
+  }
+  async function liConnect(token) {
+    const msg = liEl('li-msg');
+    LI.token = token.trim();
+    msg.textContent = 'Prüfe Token …'; msg.className = 'msg';
+    try {
+      const acc = await (await liFetch('/api/account')).json();
+      LI.user = acc.username;
+      LI.rating = acc.perfs && acc.perfs.puzzle ? acc.perfs.puzzle.rating : null;
+      try { localStorage.setItem('skizze-li-token', LI.token); } catch (e) {}
+      msg.textContent = '';
+      renderAccount();
+    } catch (err) {
+      LI.user = null;
+      msg.textContent = err.message; msg.className = 'msg err';
+      renderAccount();
+    }
+  }
+  function liLogout() {
+    LI.token = null; LI.user = null; LI.rating = null; LI.queue = [];
+    try { localStorage.removeItem('skizze-li-token'); } catch (e) {}
+    renderAccount();
+  }
+
+  async function ratedNext() {
+    if (LI.busy) return;
+    LI.busy = true;
+    try {
+      if (!LI.queue.length) {
+        trainerFeedback('Hole Puzzles von Lichess …');
+        const js = await (await liFetch('/api/puzzle/batch/mix?nb=10')).json();
+        LI.queue = js.puzzles || [];
+        if (js.glicko) LI.rating = js.glicko.rating;
+        renderAccount();
+      }
+      const next = LI.queue.shift();
+      if (!next) throw new Error('Lichess hat gerade keine Puzzles geliefert.');
+      if (mode !== 'puzzle') return;
+      loadLichessPuzzleJson(next);
+      game.trainer.rated = { id: next.puzzle.id, reported: false,
+        info: { title: 'Puzzle #' + next.puzzle.id, rating: next.puzzle.rating, plays: next.puzzle.plays, themes: next.puzzle.themes, link: 'https://lichess.org/training/' + next.puzzle.id } };
+      // Wertung und Themen erst nach dem Lösen zeigen, wie auf Lichess
+      showPuzzleInfo({ title: 'Gewertetes Puzzle', themes: [], link: null });
+    } catch (err) {
+      trainerFeedback(err.message, 'bad');
+    } finally { LI.busy = false; }
+  }
+
+  // Ergebnis an Lichess melden: einmal pro Puzzle, beim ersten Fehler sofort als verloren
+  async function ratedReport(tr, win) {
+    if (!tr || !tr.rated || tr.rated.reported || !LI.token) return;
+    tr.rated.reported = true;
+    try {
+      const res = await liFetch('/api/puzzle/batch/mix', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ solutions: [{ id: tr.rated.id, win, rated: true }] }),
+      });
+      const js = await res.json();
+      const round = (js.rounds || []).find((r) => r.id === tr.rated.id);
+      if (js.glicko) LI.rating = js.glicko.rating;
+      renderAccount();
+      const diff = round && typeof round.ratingDiff === 'number' ? round.ratingDiff : null;
+      tr.rated.diff = diff;
+      const el = liEl('li-result');
+      el.textContent = diff === null ? 'Ergebnis an Lichess gemeldet.' : `Puzzle-Rating ${Math.round(LI.rating)} (${diff >= 0 ? '+' : ''}${diff})`;
+      el.className = 'trainmsg ' + (win ? 'good' : 'bad');
+    } catch (err) {
+      tr.rated.reported = false;
+      const el = liEl('li-result');
+      el.textContent = 'Melden fehlgeschlagen: ' + err.message; el.className = 'msg err';
+    }
+  }
+
+  liEl('li-form').onsubmit = (e) => { e.preventDefault(); const v = liEl('li-token').value; if (v.trim()) liConnect(v); liEl('li-token').value = ''; };
+  liEl('li-logout').onclick = liLogout;
+  liEl('li-next').onclick = () => { liEl('li-result').textContent = ''; ratedNext(); };
+  renderAccount();
+  if (LI.token) liConnect(LI.token);
+
+  // ---------- Live-Partien über die Lichess Board API ----------
+  const live = {
+    gameId: null, color: null, game: null, status: null, winner: null,
+    clock: null, players: {}, ctrl: null, evCtrl: null, sending: false,
+    drawOffer: { w: false, b: false }, realtime: false, list: [],
+  };
+  const STATUS_DE = {
+    created: 'Partie erstellt', started: 'läuft', aborted: 'Abgebrochen', mate: 'Schachmatt', resign: 'Aufgegeben',
+    stalemate: 'Patt', timeout: 'Gegner hat die Partie verlassen', draw: 'Remis', outoftime: 'Zeit abgelaufen',
+    cheat: 'Regelverstoß', noStart: 'Nicht begonnen', unknownFinish: 'Beendet', variantEnd: 'Beendet',
+  };
+  const liveRunning = () => live.gameId && (live.status === 'started' || live.status === 'created');
+
+  // NDJSON-Stream lesen; ruft onLine für jede Zeile, endet mit dem Stream
+  async function ndjson(path, onLine, ctrl) {
+    const res = await fetch('https://lichess.org' + path, { headers: { Authorization: 'Bearer ' + LI.token }, signal: ctrl.signal });
+    if (res.status === 401 || res.status === 403) throw new Error('Der Token hat keine Spielrechte. Erstelle einen neuen mit „Play games with the board API“ (Link unten).');
+    if (!res.ok) throw new Error('Lichess antwortet mit Fehler ' + res.status);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (line) { try { onLine(JSON.parse(line)); } catch (e) { console.warn('Zeile nicht lesbar', line); } }
+      }
+    }
+  }
+  const liveMsg = (t, tone = '') => { const el = liEl('lv-msg'); el.textContent = t; el.className = 'trainmsg ' + tone; };
+
+  // Ereignis-Stream: meldet Partiebeginn (auch Partien, die auf lichess.org gestartet wurden)
+  async function startEventStream() {
+    if (live.evCtrl || !LI.token) return;
+    live.evCtrl = new AbortController();
+    const ctrl = live.evCtrl;
+    try {
+      await ndjson('/api/stream/event', (ev) => {
+        if (ev.type === 'gameStart' || ev.type === 'gameFinish') refreshPlaying();
+        if (ev.type === 'gameStart' && ev.game && !liveRunning()) {
+          const id = ev.game.gameId || ev.game.id;
+          if (id && id !== live.gameId) attachGame(id);
+        }
+      }, ctrl);
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      liveMsg(err.message, 'bad');
+    }
+    if (live.evCtrl === ctrl && !ctrl.signal.aborted) { live.evCtrl = null; setTimeout(startEventStream, 4000); }
+  }
+  function stopStreams() {
+    if (live.evCtrl) { live.evCtrl.abort(); live.evCtrl = null; }
+    if (live.ctrl) { live.ctrl.abort(); live.ctrl = null; }
+  }
+
+  async function challengeAI() {
+    if (!LI.token) { liveMsg('Bitte zuerst unter „Puzzles“ oder unten einen Token verbinden.', 'bad'); return; }
+    const body = new URLSearchParams();
+    body.set('level', liEl('lv-level').value);
+    body.set('color', liEl('lv-color').value);
+    body.set('variant', 'standard');
+    const tc = liEl('lv-time').value;
+    if (tc !== 'none') { const [m, inc] = tc.split('+').map(Number); body.set('clock.limit', String(m * 60)); body.set('clock.increment', String(inc)); }
+    liveMsg('Fordere die Lichess-KI heraus …');
+    try {
+      const res = await liFetch('/api/challenge/ai', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+      const js = await res.json();
+      live.showNew = false;
+      attachGame(js.id);
+      setTimeout(refreshPlaying, 1500);
+    } catch (err) {
+      liveMsg(/ablehnt|Rechte/.test(err.message) ? 'Der Token darf keine Partien starten. Erstelle einen neuen mit den Spielrechten (Link unten).' : err.message, 'bad');
+    }
+  }
+
+  async function attachGame(id) {
+    if (live.ctrl) live.ctrl.abort();
+    const ctrl = new AbortController();
+    live.ctrl = ctrl;
+    if (id !== live.gameId) { live.game = null; live.winner = null; live.status = 'started'; live.clock = null; live.drawOffer = { w: false, b: false }; }
+    live.gameId = id;
+    renderGameList();
+    if (mode !== 'live') setMode('live');
+    liveMsg('Verbinde mit der Partie …');
+    try {
+      await ndjson('/api/board/game/stream/' + id, (ev) => {
+        if (ev.type === 'gameFull') onGameFull(ev);
+        else if (ev.type === 'gameState') onGameState(ev);
+        else if (ev.type === 'opponentGone') liveMsg(ev.gone ? 'Dein Gegner ist weg – du kannst bald den Sieg beanspruchen.' : '', ev.gone ? 'bad' : '');
+      }, ctrl);
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      liveMsg(err.message, 'bad');
+    }
+    // Verbindung weg, Partie läuft noch: neu verbinden (Lichess schickt dann wieder den vollen Stand)
+    if (live.ctrl === ctrl && !ctrl.signal.aborted && liveRunning()) setTimeout(() => { if (live.ctrl === ctrl) attachGame(id); }, 1500);
+  }
+
+  function onGameFull(ev) {
+    const me = (LI.user || '').toLowerCase();
+    const name = (p) => (p.aiLevel ? `Lichess-KI Stufe ${p.aiLevel}` : `${p.name || p.id || '?'}${p.rating ? ' (' + p.rating + ')' : ''}`);
+    live.players = { w: name(ev.white), b: name(ev.black) };
+    live.color = ev.white.id && ev.white.id.toLowerCase() === me ? 'w' : ev.black.id && ev.black.id.toLowerCase() === me ? 'b' : (ev.white.aiLevel ? 'b' : 'w');
+    live.realtime = !!ev.clock;
+    // nach einer Neuverbindung dieselbe Partie weiterführen, nur den Stand abgleichen
+    if (live.game && live.game.gameId === live.gameId) { onGameState(ev.state); return; }
+    const start = ev.initialFen && ev.initialFen !== 'startpos' ? ChessCore.fromFen(ev.initialFen) : ChessCore.startPos();
+    live.game = ChessCore.gameFromPos(start, { White: live.players.w, Black: live.players.b, Event: 'Lichess-Partie ' + live.gameId, Site: 'https://lichess.org/' + live.gameId });
+    live.game.gameId = live.gameId;
+    if (mode === 'live') { setGame(live.game, 0); setPlayers(live.game.headers); azGoal = live.color === 'w' ? 0 : Math.PI; }
+    onGameState(ev.state, true);
+  }
+
+  function onGameState(st, first = false) {
+    const g = live.game;
+    if (!g) return;
+    const moves = st.moves ? st.moves.trim().split(/\s+/) : [];
+    const have = g.plies.map((p) => ChessCore.sqName(p.from) + ChessCore.sqName(p.to) + (p.promo || ''));
+    let same = 0;
+    while (same < have.length && same < moves.length && have[same] === moves[same]) same++;
+    // eigener Zug ist unterwegs und noch nicht bestätigt: nicht zurücknehmen
+    if (live.sending && same === moves.length && have.length === moves.length + 1) moves.push(have[have.length - 1]), same++;
+    const rebuilt = same < have.length; // Rücknahme oder abweichender Stand
+    if (rebuilt) {
+      g.plies.length = same; g.states.length = same + 1; g.positions.length = same + 1; g.captured.length = same + 1;
+      if (game === g && cur > same) { cur = same; anim = null; }
+    }
+    const before = g.plies.length;
+    try {
+      for (let i = same; i < moves.length; i++) ChessCore.pushMove(g, ChessCore.uciToMove(g.positions[g.positions.length - 1], moves[i]));
+    } catch (err) { liveMsg('Zug von Lichess nicht lesbar: ' + err.message, 'bad'); }
+    live.clock = st.wtime !== undefined && live.realtime ? { w: st.wtime, b: st.btime, at: performance.now() } : null;
+    live.drawOffer = { w: !!st.wdraw, b: !!st.bdraw };
+    const wasRunning = liveRunning();
+    live.status = st.status; live.winner = st.winner || null;
+    if (mode === 'live' && game === g) {
+      buildMoveList();
+      const n = g.plies.length;
+      if (first || rebuilt || n - before > 1) go(n, false);
+      else if (n !== cur) go(n, true);
+    }
+    if (wasRunning && !liveRunning()) onGameEnd();
+    renderLive();
+  }
+
+  function onGameEnd() {
+    if (live.ctrl) { live.ctrl.abort(); live.ctrl = null; }
+    const res = live.winner ? (live.winner === 'white' ? '1-0' : '0-1') : (live.status === 'aborted' || live.status === 'noStart' ? '*' : '½-½');
+    if (live.game) live.game.headers.Result = res === '½-½' ? '1/2-1/2' : res;
+    Sound.play('end', 0.6);
+    renderLive();
+  }
+
+  // Eigener Zug: sofort zeigen, dann an Lichess senden; bei Ablehnung zurücknehmen
+  async function liveMove(mv, d) {
+    const g = live.game;
+    if (!g || live.sending) { if (d) snapBack(d); return; }
+    const uci = ChessCore.sqName(mv.from) + ChessCore.sqName(mv.to) + (mv.promo || '');
+    ChessCore.pushMove(g, mv);
+    buildMoveList();
+    go(g.plies.length, true, d ? { dur: 420 } : {});
+    animateDrop(d);
+    live.sending = true;
+    try {
+      await liFetch(`/api/board/game/${live.gameId}/move/${uci}`, { method: 'POST' });
+    } catch (err) {
+      // Zug wurde nicht angenommen: Stand zurücksetzen, der Stream liefert den richtigen Stand
+      g.plies.length -= 1; g.states.length -= 1; g.positions.length -= 1; g.captured.length -= 1;
+      buildMoveList(); go(g.plies.length, false);
+      liveMsg('Zug nicht angenommen: ' + err.message, 'bad');
+    } finally { live.sending = false; }
+  }
+
+  async function liveAction(path, label) {
+    try { await liFetch(`/api/board/game/${live.gameId}/${path}`, { method: 'POST' }); if (label) liveMsg(label); }
+    catch (err) { liveMsg(err.message, 'bad'); }
+  }
+
+  const fmtClock = (ms) => {
+    ms = Math.max(0, ms);
+    const s = ms / 1000;
+    if (s < 10) return s.toFixed(1).replace('.', ',');
+    const m = Math.floor(s / 60), r = Math.floor(s % 60);
+    return `${m}:${String(r).padStart(2, '0')}`;
+  };
+  function clockNow(c) {
+    if (!live.clock) return null;
+    let t = live.clock[c];
+    const g = live.game;
+    const toMove = g ? g.positions[g.positions.length - 1].turn : 'w';
+    // Uhr läuft erst nach dem ersten Zug jeder Seite
+    if (liveRunning() && toMove === c && g && g.plies.length >= 2) t -= performance.now() - live.clock.at;
+    return t;
+  }
+  function renderLive() {
+    if (mode !== 'live') return;
+    const g = live.game;
+    const top = live.color === 'w' ? 'b' : 'w', bottom = live.color || 'w';
+    const box = (c, el) => {
+      const t = clockNow(c);
+      el.querySelector('.who').textContent = (c === 'w' ? '♔ ' : '♚ ') + (live.players[c] || (c === 'w' ? 'Weiß' : 'Schwarz'));
+      el.querySelector('.clk').textContent = t === null ? '' : fmtClock(t);
+      const toMove = g && liveRunning() && g.positions[g.positions.length - 1].turn === c;
+      el.classList.toggle('active', !!toMove);
+      el.classList.toggle('low', t !== null && t < 20000);
+    };
+    if (live.gameId) { box(top, liEl('lv-top')); box(bottom, liEl('lv-bottom')); }
+    else liEl('lv-confirm').hidden = true;
+    liEl('lv-game').hidden = !live.gameId;
+    liEl('lv-new').hidden = liveRunning() && !live.showNew;
+    const running = liveRunning();
+    const few = g && g.plies.length < 2;
+    liEl('lv-abort').hidden = !running || !few;
+    const confirming = !liEl('lv-confirm').hidden;
+    liEl('lv-resign').hidden = !running || few || confirming;
+    if (!running && confirming) liEl('lv-confirm').hidden = true;
+    liEl('lv-draw').hidden = !running || few;
+    liEl('lv-draw').textContent = live.drawOffer[live.color === 'w' ? 'b' : 'w'] ? 'Remis annehmen' : 'Remis anbieten';
+    liEl('lv-review').hidden = running || !g || !g.plies.length;
+    if (running) {
+      const myTurn = g && g.positions[g.positions.length - 1].turn === live.color;
+      const offer = live.drawOffer[live.color === 'w' ? 'b' : 'w'] ? ' Dein Gegner bietet Remis an.' : '';
+      liveMsg((myTurn ? 'Du bist am Zug.' : 'Der Gegner ist am Zug …') + offer);
+    } else if (live.status && live.gameId) {
+      const who = live.winner ? (live.winner === (live.color === 'w' ? 'white' : 'black') ? 'Du hast gewonnen' : 'Du hast verloren') : '';
+      liveMsg(`${STATUS_DE[live.status] || 'Beendet'}${who ? ' – ' + who : ''}.`, live.winner && who.startsWith('Du hast g') ? 'good' : '');
+    }
+    // während einer gewerteten Echtzeitpartie keine Hilfsmittel (Fair Play)
+    const lock = (running && live.realtime) || live.list.some((gm) => gm.speed && gm.speed !== 'correspondence' && gm.speed !== 'unlimited');
+    for (const t of ['play', 'puzzle', 'study']) liEl('tab-' + t).disabled = lock;
+    liEl('lv-fair').hidden = !lock;
+  }
+  setInterval(() => { if (mode === 'live' && live.clock && liveRunning()) { renderLive(); dirty = true; } }, 100);
+
+  // PGN der Partie, um sie im Nachspielen-Modus anzuschauen
+  function livePgn() {
+    const g = live.game, h = g.headers;
+    let s = Object.entries(h).map(([k, v]) => `[${k} "${v}"]`).join('\n') + '\n\n';
+    g.plies.forEach((p, i) => { if (p.color === 'w') s += p.num + '. '; else if (i === 0) s += p.num + '... '; s += p.san + ' '; });
+    return s + (h.Result || '*');
+  }
+
+  // Liste der laufenden Partien (auch Fernschach), zum Umschalten
+  async function refreshPlaying() {
+    if (!LI.token || !LI.user) return;
+    try {
+      const js = await (await liFetch('/api/account/playing?nb=30')).json();
+      live.list = js.nowPlaying || [];
+    } catch (e) { return; }
+    renderGameList();
+    renderLive();
+  }
+  const SPEED_DE = { ultraBullet: 'Ultrabullet', bullet: 'Bullet', blitz: 'Blitz', rapid: 'Schnellschach', classical: 'Klassisch', correspondence: 'Fernschach', unlimited: 'ohne Uhr' };
+  function renderGameList() {
+    const box = liEl('lv-listbox'), el = liEl('lv-list');
+    el.innerHTML = '';
+    box.hidden = !live.list.length || (live.list.length === 1 && live.list[0].gameId === live.gameId && liveRunning());
+    for (const gm of live.list) {
+      const b = document.createElement('button');
+      b.className = 'gamebtn' + (gm.gameId === live.gameId ? ' cur' : '') + (gm.isMyTurn ? ' myturn' : '');
+      const opp = gm.opponent || {};
+      const name = opp.ai ? `Lichess-KI Stufe ${opp.ai}` : `${opp.username || '?'}${opp.rating ? ' (' + opp.rating + ')' : ''}`;
+      const l1 = document.createElement('span'); l1.className = 'g1';
+      l1.textContent = `${gm.color === 'white' ? '♔' : '♚'} gegen ${name}`;
+      const l2 = document.createElement('span'); l2.className = 'g2';
+      const left = typeof gm.secondsLeft === 'number' && gm.speed !== 'correspondence' ? ' · ' + fmtClock(gm.secondsLeft * 1000) : '';
+      l2.textContent = `${gm.isMyTurn ? 'Du bist am Zug' : 'Gegner am Zug'} · ${SPEED_DE[gm.speed] || gm.speed || ''}${left}`;
+      b.append(l1, l2);
+      b.onclick = () => { if (gm.gameId !== live.gameId) attachGame(gm.gameId); };
+      el.appendChild(b);
+    }
+  }
+  setInterval(() => { if (mode === 'live' && LI.token && LI.user && !document.hidden) refreshPlaying(); }, 8000);
+
+  liEl('tab-live').onclick = () => setMode('live');
+  liEl('lv-start').onclick = challengeAI;
+  let resignTimer = null;
+  function setResignConfirm(on) {
+    clearTimeout(resignTimer);
+    liEl('lv-resign').hidden = on || !liveRunning();
+    liEl('lv-confirm').hidden = !on;
+    if (on) resignTimer = setTimeout(() => setResignConfirm(false), 6000);
+  }
+  liEl('lv-resign').onclick = () => setResignConfirm(true);
+  liEl('lv-resign-yes').onclick = () => { setResignConfirm(false); liveAction('resign', 'Aufgegeben.'); };
+  liEl('lv-resign-no').onclick = () => setResignConfirm(false);
+  liEl('lv-abort').onclick = () => liveAction('abort', 'Partie abgebrochen.');
+  liEl('lv-draw').onclick = () => liveAction('draw/yes', live.drawOffer[live.color === 'w' ? 'b' : 'w'] ? '' : 'Remis angeboten.');
+  liEl('lv-review').onclick = () => {
+    const pgn = livePgn();
+    setMode('replay');
+    if (loadGame(pgn)) { document.getElementById('pgn').value = pgn; }
+  };
+  liEl('lv-newgame').onclick = () => {
+    if (liveRunning()) { live.showNew = !live.showNew; renderLive(); return; }
+    live.gameId = null; live.game = null; live.status = null; live.clock = null; renderLive();
+  };
+  liEl('lv-form').onsubmit = (e) => { e.preventDefault(); const v = liEl('lv-token').value; if (v.trim()) liConnect(v).then(() => { renderLiveAccount(); startEventStream(); }); liEl('lv-token').value = ''; };
+  function renderLiveAccount() {
+    const on = !!(LI.token && LI.user);
+    liEl('lv-login').hidden = on;
+    liEl('lv-panel').hidden = !on;
+    if (on) liEl('lv-who').textContent = 'Angemeldet als ' + LI.user;
+  }
+
+  // ---------- Schachuhr neben dem Brett ----------
+  function clockItem() {
+    if (mode !== 'live' || !live.game || game !== live.game || !live.clock) return null;
+    const side = seatSide(); // rechts vom eigenen Platz
+    return { kind: 'clock', x: 5.85 * side, z: -1.7 * side, scale: 1, y: 0, alpha: 1 };
+  }
+  function drawClock(it) {
+    const side = it.x > 0 ? 1 : -1;
+    // Vorderseite schaut quer zum Brett (für beide Spieler lesbar), um 15° zum eigenen Platz gedreht
+    const CLOCK_TURN = (15 * Math.PI) / 180;
+    const F = norm([-side * Math.cos(CLOCK_TURN), 0, side * Math.sin(CLOCK_TURN)]);
+    const A = [F[2], 0, -F[0]];                              // Längsachse, vom Spieler aus nach rechts
+    const W = (a, y, f) => [it.x + A[0] * a + F[0] * f, y + TABLE, it.z + A[2] * a + F[2] * f];
+    const P = (a, y, f) => P3(...W(a, y, f));
+    const L = 1.3, D = 0.55, H = 1.05, ft = D * 0.05;
+    const key = 9100, lw = 2.2;
+    const g = live.game;
+    const toMove = g.positions[g.positions.length - 1].turn;
+    const running = liveRunning();
+    const faces = [];
+    const addF = (nLocal, pts) => {
+      const n = norm([A[0] * nLocal[0] + F[0] * nLocal[2], nLocal[1], A[2] * nLocal[0] + F[2] * nLocal[2]]);
+      const w = pts.map((p) => W(...p));
+      const c = w.reduce((s, p) => [s[0] + p[0] / w.length, s[1] + p[1] / w.length, s[2] + p[2] / w.length], [0, 0, 0]);
+      if (dot(n, sub(pos, c)) <= 0) return null;
+      const f = { poly: pts.map((p) => P(...p)), dark: dot(n, LIGHT) < 0.1 };
+      faces.push(f);
+      return f;
+    };
+    addF([0, 0, -1], [[-L, 0, -D], [L, 0, -D], [L, H, -D], [-L, H, -D]]);
+    addF([0, 1, 0], [[-L, H, -D], [L, H, -D], [L, H, ft], [-L, H, ft]]);
+    const front = addF([0, D - ft, H], [[-L, H, ft], [L, H, ft], [L, 0, D], [-L, 0, D]]);
+    addF([1, 0, 0], [[L, 0, -D], [L, 0, D], [L, H, ft], [L, H, -D]]);
+    addF([-1, 0, 0], [[-L, 0, D], [-L, 0, -D], [-L, H, -D], [-L, H, ft]]);
+    const all = faces.map((f) => orient(f.poly));
+    all.forEach((p, i) => strokePts(p, { closed: true, w: lw * 2, alpha: 0.9, passes: 1, amp: 0.6, key: key + i }));
+    ctx.save();
+    ctx.beginPath(); all.forEach(polyPath); ctx.fillStyle = paperTex; ctx.fill('nonzero');
+    ctx.clip('nonzero');
+    const bb = bboxOf(all.flat());
+    ctx.beginPath(); all.forEach(polyPath); ctx.fillStyle = INK; ctx.globalAlpha = 0.3; ctx.fill('nonzero'); ctx.globalAlpha = 1;
+    hatchLines(bb, Math.PI * 0.3, 3.4 * S, { alpha: 0.45, key: key + 20 });
+    const dk = faces.filter((f) => f.dark).map((f) => orient(f.poly));
+    if (dk.length) { ctx.beginPath(); dk.forEach(polyPath); ctx.clip('nonzero'); hatchLines(bb, -Math.PI * 0.2, 3.2 * S, { alpha: 0.4, key: key + 21 }); }
+    ctx.restore();
+    faces.forEach((f, i) => strokePts(f.poly, { closed: true, w: lw * 0.7, passes: 1, key: key + 30 + i }));
+
+    // eigene Anzeige rechts (näher am eigenen Platz), die des Gegners links
+    const me = side > 0 ? 'w' : 'b'; // Zeit der Seite, von der man schaut, steht rechts
+    for (const c of [me, me === 'w' ? 'b' : 'w']) {
+      const a0 = c === me ? 0.65 : -0.65;
+      const t = clockNow(c);
+      const active = running && toMove === c && g.plies.length >= 2;
+      // Taste oben: Wer am Zug ist, dessen Taste steht oben
+      const up = running && toMove === c;
+      const bh = up ? 0.17 : 0.05, bw = 0.3, bd = 0.15, bf = (-D + ft) / 2;
+      const q = (y) => [[a0 - bw, y, bf - bd], [a0 + bw, y, bf - bd], [a0 + bw, y, bf + bd], [a0 - bw, y, bf + bd]];
+      const lo = q(H), hi = q(H + bh);
+      const quads = [hi, [lo[0], lo[1], hi[1], hi[0]], [lo[1], lo[2], hi[2], hi[1]], [lo[2], lo[3], hi[3], hi[2]], [lo[3], lo[0], hi[0], hi[3]]];
+      const bparts = quads.map((qq) => orient(qq.map((p) => P(...p))));
+      bparts.forEach((p, i) => strokePts(p, { closed: true, w: lw * 1.6, alpha: 0.9, passes: 1, key: key + 50 + i + (c === 'w' ? 0 : 9) }));
+      ctx.save(); ctx.beginPath(); bparts.forEach(polyPath); ctx.fillStyle = paperTex; ctx.fill('nonzero'); ctx.clip('nonzero');
+      hatchLines(bboxOf(bparts.flat()), Math.PI * 0.25, 4.5 * S, { alpha: 0.22, key: key + 70 });
+      ctx.restore();
+      strokePts(hi.map((p) => P(...p)), { closed: true, w: lw * 0.8, passes: 1, key: key + 80 + (c === 'w' ? 0 : 1) });
+      if (!front) continue;
+      // Anzeigefenster auf der Schrägfläche (u = 0 unten … 1 oben)
+      const onF = (a, u) => [a, H * u, D + (ft - D) * u];
+      const win = [onF(a0 - 0.56, 0.12), onF(a0 + 0.56, 0.12), onF(a0 + 0.56, 0.9), onF(a0 - 0.56, 0.9)].map((p) => P(...p));
+      ctx.beginPath(); polyPath(win); ctx.fillStyle = paperTex; ctx.fill();
+      strokePts(win, { closed: true, w: active ? 3.2 : 1.6, alpha: 0.9, passes: active ? 2 : 1, key: key + 90 + (c === 'w' ? 0 : 1) });
+      const o3 = W(...onF(a0, 0.51));
+      const oo = proj(o3), ex = proj(add(o3, A)), ey = proj(add(o3, norm(sub(W(...onF(a0, 1)), W(...onF(a0, 0))))));
+      const k = 0.0058;
+      ctx.save();
+      ctx.setTransform(DPR * (ex[0] - oo[0]) * k, DPR * (ex[1] - oo[1]) * k, DPR * (ey[0] - oo[0]) * -k, DPR * (ey[1] - oo[1]) * -k, DPR * oo[0], DPR * oo[1]);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = t !== null && t < 20000 ? RED : INK;
+      ctx.font = '700 20px Caveat, "Comic Sans MS", cursive';
+      ctx.globalAlpha = 0.7;
+      ctx.fillText(c === 'w' ? '♔' : '♚', -80, -34);
+      ctx.globalAlpha = 1;
+      ctx.font = '700 84px Caveat, "Comic Sans MS", cursive';
+      if (t !== null) ctx.fillText(fmtClock(t), 4, 6);
+      ctx.restore();
+    }
+  }
+
+  // ---------- Partieformular: Block neben dem Brett, auf dem die Züge mitgeschrieben werden ----------
+  let viewSeat = 'w'; // für Nachspielen/Studien: per „Seite wechseln“ umschaltbar
+  function seatColor() {
+    if (mode === 'live' && live.game && game === live.game) return live.color || 'w';
+    if (mode === 'play') return play.human;
+    if (game && game.trainer && !game.trainer.done) return game.trainer.color;
+    if ((mode === 'puzzle' || mode === 'study') && game && game.trainer) return game.trainer.color;
+    return viewSeat;
+  }
+  const seatSide = () => (seatColor() === 'b' ? -1 : 1);
+  let padHits = [];
+  const PAD = { w: 2.6, h: 3.1, rows: 10, turn: (18 * Math.PI) / 180, tilt: (45 * Math.PI) / 180 };
+  function padFrame(own) {
+    const side = seatSide();
+    if (!own) {
+      // Notizblatt des Gegners: klein, flach, auf seiner rechten Seite hinter dem Brettrand
+      const t = (10 * Math.PI) / 180, ca2 = Math.cos(t), sa2 = Math.sin(t);
+      const rot2 = (v) => [v[0] * ca2 + v[2] * sa2, 0, -v[0] * sa2 + v[2] * ca2];
+      return { c: [-5.75 * side, 0.012, -5.15 * side], Au: rot2([-side, 0, 0]), Av: rot2([0, 0, side]), k: 0.6, tilt: 0 };
+    }
+    const ca = Math.cos(PAD.turn), sa = Math.sin(PAD.turn);
+    const Au0 = [side, 0, 0], Av0 = [0, 0, -side];
+    const rot = (v) => [v[0] * ca + v[2] * sa, 0, -v[0] * sa + v[2] * ca];
+    const Au = rot(Au0), Av = rot(Av0);
+    // so weit nach außen schieben, dass keine Ecke über dem Brettrand (±4,55) liegt
+    const ct = Math.cos(PAD.tilt);
+    let maxIn = -Infinity;
+    for (const u of [-PAD.w / 2, PAD.w / 2]) for (const v of [-PAD.h / 2, PAD.h / 2]) maxIn = Math.max(maxIn, (Au[0] * u + Av[0] * v * ct) * side);
+    const cx = -(4.55 + 0.2 + maxIn) * side;
+    return { c: [cx, 0.012, 1.7 * side], Au, Av, k: 1, tilt: PAD.tilt };
+  }
+  function drawPad() {
+    padHits = [];
+    if (!game || !show.pad) return;
+    drawOnePad(false);
+    drawOnePad(true);
+  }
+  function drawOnePad(own) {
+    const { c, Au, Av, k: K, tilt } = padFrame(own);
+    // Block liegt schräg auf einer kleinen Schreibunterlage: hinterer Rand angehoben, damit man ihn lesen kann
+    const ct = Math.cos(tilt), st = Math.sin(tilt), lift = TABLE + (PAD.h / 2) * st * K + 0.02;
+    const Wp = (u, v) => [c[0] + (Au[0] * u + Av[0] * v * ct) * K, lift + v * st * K, c[2] + (Au[2] * u + Av[2] * v * ct) * K]; // u: rechts, v: nach oben (vom Schreiber weg)
+    const Wg = (u, v) => [c[0] + (Au[0] * u + Av[0] * v * ct) * K, TABLE + 0.005, c[2] + (Au[2] * u + Av[2] * v * ct) * K];
+    const Pp = (u, v) => proj(Wp(u, v));
+    const hw = PAD.w / 2, hh = PAD.h / 2;
+    // Schatten, Blatt, Rand
+    const sheet = [Pp(-hw, -hh), Pp(hw, -hh), Pp(hw, hh), Pp(-hw, hh)];
+    // Schatten auf dem Tisch und Seitenkeil der Unterlage
+    const sh = [[-hw + 0.1, -hh], [hw + 0.1, -hh], [hw + 0.25, hh + 0.2], [-hw + 0.25, hh + 0.2]].map(([u, v]) => proj(Wg(u, v)));
+    ctx.beginPath(); polyPath(sh); ctx.fillStyle = INK; ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
+    if (tilt > 0.01) for (const su of [-hw, hw]) {
+      const wedge = [proj(Wg(su, -hh)), proj(Wg(su, hh)), Pp(su, hh)];
+      ctx.beginPath(); polyPath(wedge); ctx.fillStyle = paperTex; ctx.fill();
+      ctx.save(); ctx.clip(); hatchLines(bboxOf(wedge), Math.PI * 0.45, 3.5 * S, { alpha: 0.45, key: 7005 }); ctx.restore();
+      strokePts(wedge, { closed: true, w: 1.3, passes: 1, key: 7006 + (su > 0 ? 1 : 0) });
+    }
+    // mehrere Blätter darunter andeuten
+    for (let k = 2; k >= 1; k--) strokePts([Pp(-hw + 0.03 * k, -hh - 0.03 * k), Pp(hw + 0.03 * k, -hh - 0.03 * k), Pp(hw + 0.03 * k, hh - 0.03 * k)], { w: 1, alpha: 0.5, passes: 1, key: 7000 + k });
+    ctx.beginPath(); polyPath(sheet); ctx.fillStyle = '#fbf8f0'; ctx.fill();
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = paperTex; ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    strokePts(sheet, { closed: true, w: 1.6, key: 7010 });
+    // Bindung oben
+    for (let i = 0; i < 9; i++) {
+      const u = -hw + 0.16 + (i * (PAD.w - 0.32)) / 8;
+      const ring = []; for (let k = 0; k <= 12; k++) { const t = (k / 12) * Math.PI * 2; ring.push(Pp(u + Math.cos(t) * 0.05, hh - 0.04 + Math.sin(t) * 0.06)); }
+      strokePts(ring, { closed: true, w: 1.1, alpha: 0.8, passes: 1, key: 7020 + i });
+    }
+    // Text flach auf das Blatt schreiben
+    const write = (txt, u, v, size, o = {}) => {
+      const oo = Pp(u, v), ex = Pp(u + 1, v), ey = Pp(u, v + 1);
+      const k = size / 40;
+      ctx.save();
+      ctx.setTransform(DPR * (ex[0] - oo[0]) * k / 1, DPR * (ex[1] - oo[1]) * k, DPR * (ey[0] - oo[0]) * -k, DPR * (ey[1] - oo[1]) * -k, DPR * oo[0], DPR * oo[1]);
+      ctx.font = `${o.bold ? 700 : 600} 40px Caveat, "Comic Sans MS", cursive`;
+      ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = o.color || INK; ctx.globalAlpha = o.alpha ?? 0.9;
+      ctx.fillText(txt, 0, 0);
+      ctx.restore();
+    };
+    const h = game.headers || {};
+    const nm = (x, d) => (x && x !== '?' ? x.replace(/\s*\(.*\)$/, '') : d);
+    let title = `${nm(h.White, 'Weiß')} – ${nm(h.Black, 'Schwarz')}`;
+    if (title.length > 25) title = title.slice(0, 24).trim() + '…';
+    write(title, -hw + 0.14, hh - 0.32, 0.22, { bold: true });
+    // Spaltenlinien
+    const top = hh - 0.42, rowH = (PAD.h - 0.55) / PAD.rows;
+    const colN = -hw + 0.4, colW = -hw + 0.48, colB = 0.3;
+    strokePts([Pp(-hw + 0.08, top), Pp(hw - 0.08, top)], { w: 1.2, alpha: 0.6, passes: 1, key: 7040 });
+    strokePts([Pp(colB - 0.06, top), Pp(colB - 0.06, -hh + 0.08)], { w: 0.8, alpha: 0.35, passes: 1, key: 7041 });
+    strokePts([Pp(colN + 0.03, top), Pp(colN + 0.03, -hh + 0.08)], { w: 0.8, alpha: 0.35, passes: 1, key: 7042 });
+    // Züge bis zur gezeigten Stellung – wie auf einem echten Formular; bei langen Partien die letzten Zeilen
+    const n = Math.min(visLen(), cur);
+    const off = game.plies.length && game.plies[0].color === 'b' ? 1 : 0;
+    const totalRows = n ? Math.ceil((n + off) / 2) : 0;
+    const first = Math.max(0, totalRows - PAD.rows);
+    for (let r = 0; r < PAD.rows; r++) {
+      const v = top - (r + 1) * rowH;
+      strokePts([Pp(-hw + 0.08, v), Pp(hw - 0.08, v)], { w: 0.6, alpha: 0.25, passes: 1, key: 7100 + r });
+      const row = first + r;
+      if (row >= totalRows) continue;
+      const iw = row * 2 - off, ib = iw + 1;
+      const pw = iw >= 0 && iw < n ? game.plies[iw] : null, pb = ib < n ? game.plies[ib] : null;
+      if (!pw && !pb) continue;
+      const num = (pw || pb).num;
+      const tv = v + rowH * 0.22;
+      write(String(num), colN, tv, 0.2, { align: 'right', alpha: 0.6 });
+      for (const [p, idx, u0, u1] of [[pw, iw, colW, colB - 0.1], [pb, ib, colB, hw - 0.1]]) {
+        if (!p) continue;
+        const isCur = idx + 1 === cur;
+        write(p.san, u0, tv, 0.27, { bold: isCur });
+        if (isCur) strokePts([Pp(u0 - 0.02, tv - 0.04), Pp(u0 + 0.12 * p.san.length + 0.04, tv - 0.05)], { color: RED, w: 1.8, alpha: 0.85, passes: 1, key: 7200 });
+        if (own) padHits.push({ ply: idx + 1, poly: [Pp(u0 - 0.05, v), Pp(u1, v), Pp(u1, v + rowH), Pp(u0 - 0.05, v + rowH)] });
+      }
+    }
+    if (game.headers && game.headers.Result && game.headers.Result !== '*' && n === game.plies.length && (!game.trainer || game.trainer.done)) {
+      write(game.headers.Result.replace('1/2-1/2', '½–½'), hw - 0.16, -hh + 0.14, 0.17, { align: 'right', bold: true });
+    }
+  }
+  // Klick auf einen Zug auf dem Block: dorthin springen
+  function padClick(sx, sy) {
+    for (const h of padHits) if (pointInPoly(sx, sy, h.poly)) { setAutoplay(false); go(h.ply); return true; }
+    return false;
+  }
+
+  // Seitenmenü ein-/ausblenden
+  const menuBtn = document.getElementById('menutoggle');
+  function setMenu(hidden) {
+    document.body.classList.toggle('menu-hidden', hidden);
+    menuBtn.textContent = hidden ? '‹' : '›';
+    try { localStorage.setItem('skizze-menu', hidden ? '0' : '1'); } catch (e) {}
+  }
+  menuBtn.onclick = () => setMenu(!document.body.classList.contains('menu-hidden'));
+  window.addEventListener('keydown', (e) => { if ((e.key === 'm' || e.key === 'M') && !e.target.matches('input, textarea, select')) setMenu(!document.body.classList.contains('menu-hidden')); });
+  try { if (localStorage.getItem('skizze-menu') === '0') setMenu(true); } catch (e) {}
+    new ResizeObserver(resize).observe(canvas);
+  makePaper();
+  resize();
+  setBackground(bgName);
+  loadGame(document.getElementById('pgn').value);
+  if (document.fonts) document.fonts.load('600 34px Caveat').then(() => (dirty = true)).catch(() => {});
+  window.__skizze = { padHits: () => padHits.map((h) => ({ ply: h.ply, c: h.poly.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]) })), get live() { return live; }, setSet: (k) => { pieceSet = k; dirty = true; }, showcase: (k) => {
+      pieceSet = k;
+      const b = new Array(64).fill(null);
+      'kqrbnp'.split('').forEach((t, i) => { b[24 + 1 + i] = { t, c: 'w', id: [4 * 4, 3 * 4, 0, 2 * 4, 1 * 4, 4 * 4 + 1][i] }; b[40 + 1 + i] = { t, c: 'b', id: [4 * 4 + 3, 3 * 4 + 3, 3, 2 * 4 + 3, 1 * 4 + 3, 4 * 4 + 2][i] }; });
+      game = { headers: {}, plies: [], states: [b], captured: [[]] }; cur = 0; anim = null; show.coords = false; dirty = true;
+    }, setMode, onBoardClick, sqScreen: (sq, y = 0) => { const [x, z] = sqWorld(sq); return P3(x, y, z); }, get play() { return play; }, go, get cur() { return cur; }, setBoil: (v) => (boilOn = v), cam, render: () => (dirty = true) };
+  requestAnimationFrame(loop);
+})();
+
+</script>
+</body>
+</html>
