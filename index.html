@@ -68,7 +68,11 @@
   .confirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font: 700 19px Caveat, cursive; }
   .confirm[hidden] { display: none !important; }
   button.danger { border-color: var(--red); color: var(--red); border-width: 2px; font-weight: 600; }
-  #lv-listbox[hidden] { display: none !important; }
+  #lv-listbox[hidden], #op-incoming[hidden], .seekspin[hidden] { display: none !important; }
+  .challenge { border: 2px solid var(--ink); border-radius: 6px 9px 5px 8px; padding: 6px 9px; background: var(--paper); display: flex; flex-direction: column; gap: 4px; }
+  .seekspin { font: 700 19px Caveat, cursive; align-self: center; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #op-user { flex: 1; }
   .gamelist { display: flex; flex-direction: column; gap: 5px; }
   .gamebtn { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 1px; padding: 5px 9px; }
   .gamebtn .g1 { font-size: 14px; }
@@ -197,6 +201,10 @@
           <div class="sect">Laufende Partien</div>
           <div id="lv-list" class="gamelist"></div>
         </div>
+        <div id="op-incoming" class="playbox" style="display:flex" hidden>
+          <div class="sect">Herausforderungen an dich</div>
+          <div id="op-inlist" class="gamelist"></div>
+        </div>
         <div id="lv-game" class="playbox" style="display:flex" hidden>
           <div id="lv-top" class="clockbox"><span class="who"></span><span class="clk"></span></div>
           <div id="lv-bottom" class="clockbox"><span class="who"></span><span class="clk"></span></div>
@@ -213,6 +221,22 @@
         <div id="lv-msg" class="trainmsg"></div>
         <div id="lv-fair" class="meta" hidden>Während einer Echtzeitpartie sind Computer, Puzzles und Studien gesperrt – Lichess erlaubt dabei keine Hilfsmittel.</div>
         <div id="lv-new" class="playbox" style="display:flex">
+          <div class="sect">Gegner suchen</div>
+          <div class="opts">
+            <label>Bedenkzeit <select id="op-time"><option value="10+0">10 + 0</option><option value="10+5" selected>10 + 5</option><option value="15+10">15 + 10</option><option value="30+0">30 + 0</option><option value="30+20">30 + 20</option></select></label>
+            <label><input type="checkbox" id="op-rated" checked> gewertet</label>
+          </div>
+          <div class="controls"><button id="op-seek">Gegner suchen</button><span id="op-seekspin" class="seekspin" hidden>sucht …</span></div>
+          <div class="meta">Über diese Schnittstelle erlaubt Lichess in der Lobby nur Schnellschach und länger (ab ca. 10 Minuten).</div>
+          <div class="sect">Freund herausfordern</div>
+          <div class="opts"><input type="text" id="op-user" placeholder="Lichess-Benutzername" aria-label="Lichess-Benutzername"></div>
+          <div class="opts">
+            <label>Zeit <select id="op-ctime"><option value="3+2">3 + 2</option><option value="5+3">5 + 3</option><option value="10+5" selected>10 + 5</option><option value="15+10">15 + 10</option><option value="30+0">30 + 0</option><option value="d1">Fernschach 1 Tag/Zug</option><option value="d3">Fernschach 3 Tage/Zug</option></select></label>
+            <label>Farbe <select id="op-ccolor"><option value="random">zufällig</option><option value="white">Weiß</option><option value="black">Schwarz</option></select></label>
+            <label><input type="checkbox" id="op-crated"> gewertet</label>
+          </div>
+          <div class="controls"><button id="op-challenge">Herausfordern</button><button id="op-cancel" hidden>Zurückziehen</button></div>
+          <div id="op-msg" class="trainmsg"></div>
           <div class="sect">Gegen die Lichess-KI</div>
           <div class="opts">
             <label>Stufe <select id="lv-level"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
@@ -2711,6 +2735,7 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     const ctrl = live.evCtrl;
     try {
       await ndjson('/api/stream/event', (ev) => {
+        onOppEvent(ev);
         if (ev.type === 'gameStart' || ev.type === 'gameFinish') refreshPlaying();
         if (ev.type === 'gameStart' && ev.game && !liveRunning()) {
           const id = ev.game.gameId || ev.game.id;
@@ -3200,7 +3225,137 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
   menuBtn.onclick = () => setMenu(!document.body.classList.contains('menu-hidden'));
   window.addEventListener('keydown', (e) => { if ((e.key === 'm' || e.key === 'M') && !e.target.matches('input, textarea, select')) setMenu(!document.body.classList.contains('menu-hidden')); });
   try { if (localStorage.getItem('skizze-menu') === '0') setMenu(true); } catch (e) {}
-    new ResizeObserver(resize).observe(canvas);
+  // ---------- Gegner suchen, Freunde herausfordern, Herausforderungen annehmen ----------
+  const opp = { seekCtrl: null, outgoing: null, incoming: [], accepted: new Set() };
+  const oppMsg = (t, tone = '') => { const el = liEl('op-msg'); el.textContent = t; el.className = 'trainmsg ' + tone; };
+
+  // Partie-Gesuch in der Lobby: bleibt offen, solange die Verbindung steht
+  async function startSeek() {
+    if (!LI.token) return;
+    if (opp.seekCtrl) { stopSeek('Suche abgebrochen.'); return; }
+    const [m, inc] = liEl('op-time').value.split('+').map(Number);
+    const body = new URLSearchParams({ rated: liEl('op-rated').checked ? 'true' : 'false', time: String(m), increment: String(inc) });
+    const ctrl = new AbortController();
+    opp.seekCtrl = ctrl;
+    renderOpp();
+    oppMsg(`Suche Gegner für ${m} + ${inc}${liEl('op-rated').checked ? ', gewertet' : ''} …`);
+    try {
+      const res = await fetch('https://lichess.org/api/board/seek', {
+        method: 'POST', signal: ctrl.signal,
+        headers: { Authorization: 'Bearer ' + LI.token, 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+      });
+      if (res.status === 401 || res.status === 403) throw new Error('Der Token hat keine Spielrechte („Play games with the board API“).');
+      if (res.status === 400) { const t = await res.text(); throw new Error('Lichess lehnt die Suche ab: ' + (t.match(/"error"\s*:\s*"([^"]+)/) || [, t])[1]); }
+      if (!res.ok) throw new Error('Lichess antwortet mit Fehler ' + res.status);
+      // Der Stream liefert nichts Wichtiges; die Partie kommt über den Ereignis-Stream
+      const reader = res.body.getReader();
+      for (;;) { const { done } = await reader.read(); if (done) break; }
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      oppMsg(err instanceof TypeError ? 'Lichess ist von hier aus nicht erreichbar.' : err.message, 'bad');
+    }
+    if (opp.seekCtrl === ctrl) { opp.seekCtrl = null; renderOpp(); }
+  }
+  function stopSeek(msg) {
+    if (opp.seekCtrl) { opp.seekCtrl.abort(); opp.seekCtrl = null; }
+    if (msg) oppMsg(msg);
+    renderOpp();
+  }
+
+  async function challengeUser() {
+    const name = liEl('op-user').value.trim().replace(/^@/, '').replace(/^https?:\/\/lichess\.org\/@\//, '');
+    if (!/^[A-Za-z0-9_-]{2,30}$/.test(name)) { oppMsg('Bitte einen Lichess-Benutzernamen eingeben.', 'bad'); return; }
+    const tc = liEl('op-ctime').value;
+    const body = new URLSearchParams({ rated: liEl('op-crated').checked ? 'true' : 'false', color: liEl('op-ccolor').value, variant: 'standard' });
+    if (tc.startsWith('d')) body.set('days', tc.slice(1));
+    else { const [m, inc] = tc.split('+').map(Number); body.set('clock.limit', String(m * 60)); body.set('clock.increment', String(inc)); }
+    oppMsg(`Fordere ${name} heraus …`);
+    try {
+      const js = await (await liFetch('/api/challenge/' + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })).json();
+      const ch = js.challenge || js;
+      opp.outgoing = { id: ch.id, name };
+      oppMsg(`Warte, bis ${name} annimmt …`);
+      renderOpp();
+    } catch (err) {
+      oppMsg(/404/.test(err.message) ? `Spieler „${name}“ nicht gefunden.` : /400/.test(err.message) ? `${name} nimmt gerade keine solche Herausforderung an.` : err.message, 'bad');
+    }
+  }
+  async function cancelOutgoing() {
+    if (!opp.outgoing) return;
+    const id = opp.outgoing.id;
+    opp.outgoing = null; renderOpp();
+    try { await liFetch(`/api/challenge/${id}/cancel`, { method: 'POST' }); oppMsg('Herausforderung zurückgezogen.'); } catch (e) { oppMsg(e.message, 'bad'); }
+  }
+  async function answerIncoming(id, accept) {
+    opp.incoming = opp.incoming.filter((c) => c.id !== id); renderOpp();
+    if (accept) opp.accepted.add(id);
+    try {
+      await liFetch(`/api/challenge/${id}/${accept ? 'accept' : 'decline'}`, { method: 'POST' });
+      if (!accept) oppMsg('Herausforderung abgelehnt.');
+    } catch (e) { oppMsg(e.message, 'bad'); }
+  }
+
+  // Ereignisse aus dem Lichess-Stream
+  function onOppEvent(ev) {
+    const me = (LI.user || '').toLowerCase();
+    if (ev.type === 'gameStart' && ev.game) {
+      const id = ev.game.gameId || ev.game.id;
+      const fromSeek = !!opp.seekCtrl, fromChallenge = (opp.outgoing && opp.outgoing.id === id) || opp.accepted.delete(id);
+      if (fromSeek) stopSeek('');
+      if (fromChallenge) opp.outgoing = null;
+      if ((fromSeek || fromChallenge) && id) { oppMsg('Gegner gefunden – viel Erfolg!', 'good'); Sound.play('end', 0); attachGame(id); }
+      renderOpp();
+    } else if (ev.type === 'challenge' && ev.challenge) {
+      const c = ev.challenge;
+      const toMe = c.destUser && c.destUser.id && c.destUser.id.toLowerCase() === me;
+      if (toMe && !opp.incoming.some((x) => x.id === c.id)) { opp.incoming.push(c); Sound.play('pickup'); renderOpp(); }
+    } else if (ev.type === 'challengeCanceled' && ev.challenge) {
+      opp.incoming = opp.incoming.filter((x) => x.id !== ev.challenge.id); renderOpp();
+    } else if (ev.type === 'challengeDeclined' && ev.challenge) {
+      if (opp.outgoing && opp.outgoing.id === ev.challenge.id) {
+        oppMsg(`${opp.outgoing.name} hat abgelehnt${ev.challenge.declineReason ? ': ' + ev.challenge.declineReason : '.'}`, 'bad');
+        opp.outgoing = null; renderOpp();
+      }
+    }
+  }
+
+  function renderOpp() {
+    const seeking = !!opp.seekCtrl;
+    liEl('op-seek').textContent = seeking ? 'Suche abbrechen' : 'Gegner suchen';
+    liEl('op-seek').classList.toggle('danger', seeking);
+    liEl('op-seekspin').hidden = !seeking;
+    liEl('op-challenge').disabled = !!opp.outgoing;
+    liEl('op-cancel').hidden = !opp.outgoing;
+    const box = liEl('op-incoming'), list = liEl('op-inlist');
+    list.innerHTML = '';
+    box.hidden = !opp.incoming.length;
+    for (const c of opp.incoming) {
+      const row = document.createElement('div'); row.className = 'challenge';
+      const who = c.challenger ? `${c.challenger.name}${c.challenger.rating ? ' (' + c.challenger.rating + ')' : ''}` : '?';
+      const tc = c.timeControl ? (c.timeControl.type === 'clock' ? c.timeControl.show : c.timeControl.type === 'correspondence' ? `${c.timeControl.daysPerTurn} Tag(e) pro Zug` : 'ohne Uhr') : '';
+      const col = c.color === 'white' ? 'du spielst Schwarz' : c.color === 'black' ? 'du spielst Weiß' : 'Farbe zufällig';
+      const t = document.createElement('div'); t.textContent = `${who} fordert dich heraus`;
+      const m = document.createElement('div'); m.className = 'meta'; m.textContent = `${tc} · ${c.rated ? 'gewertet' : 'ungewertet'} · ${col}`;
+      row.append(t, m);
+      const btns = document.createElement('div'); btns.className = 'controls';
+      if (c.variant && c.variant.key && c.variant.key !== 'standard') {
+        const n = document.createElement('div'); n.className = 'meta'; n.textContent = `Variante „${c.variant.name || c.variant.key}“ – kann die App nicht spielen.`; row.appendChild(n);
+      } else {
+        const a = document.createElement('button'); a.textContent = 'Annehmen'; a.onclick = () => answerIncoming(c.id, true); btns.appendChild(a);
+      }
+      const d = document.createElement('button'); d.textContent = 'Ablehnen'; d.onclick = () => answerIncoming(c.id, false); btns.appendChild(d);
+      row.appendChild(btns);
+      list.appendChild(row);
+    }
+  }
+  liEl('op-seek').onclick = startSeek;
+  liEl('op-challenge').onclick = challengeUser;
+  liEl('op-cancel').onclick = cancelOutgoing;
+  liEl('op-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); challengeUser(); } });
+  window.addEventListener('beforeunload', () => { if (opp.seekCtrl) opp.seekCtrl.abort(); });
+  renderOpp();
+
+  new ResizeObserver(resize).observe(canvas);
   makePaper();
   resize();
   setBackground(bgName);
