@@ -836,6 +836,7 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     const ox = 0, oz = 0.2;
     cam.target = [ox * Math.cos(cam.az) + oz * Math.sin(cam.az), 0, -ox * Math.sin(cam.az) + oz * Math.cos(cam.az)];
     if (window.__camFocus) cam.target = window.__camFocus;
+    if (cam.dist * Math.sin(cam.el) < 3.2) cam.el = Math.asin(Math.min(1, 3.2 / cam.dist));
     const ce = Math.cos(cam.el), se = Math.sin(cam.el);
     pos = [cam.target[0] + cam.dist * Math.sin(cam.az) * ce, cam.target[1] + cam.dist * se, cam.target[2] + cam.dist * Math.cos(cam.az) * ce];
     fwd = norm(sub(cam.target, pos));
@@ -1068,15 +1069,16 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     faces.forEach((fc, i) => {
       const c = mul(add(fc.q[0], fc.q[2]), 0.5);
       if (dot(fc.n, sub(pos, c)) <= 0) return;
-      const poly = fc.q.map((p) => proj(p));
+      const poly = projPoly(fc.q);
+      if (poly.length < 3) return;
       ctx.save(); ctx.beginPath(); polyPath(poly); ctx.fillStyle = paperTex; ctx.fill(); ctx.fillStyle = BOARD_WOOD; ctx.globalAlpha = 0.45; ctx.fill(); ctx.globalAlpha = 1; ctx.clip();
       hatchLines(bboxOf(poly), Math.PI * 0.47, 5 * S, { alpha: 0.35, key: 900 + i });
       ctx.restore();
       strokePts(poly, { closed: true, key: 500 + i, w: 1.1 });
     });
     // Rahmen oben
-    const outer = [[-E, E], [E, E], [E, -E], [-E, -E]].map(([x, z]) => P3(x, 0, z));
-    const inner = [[-4, 4], [4, 4], [4, -4], [-4, -4]].map(([x, z]) => P3(x, 0, z));
+    const outer = projPoly([[-E, E], [E, E], [E, -E], [-E, -E]].map(([x, z]) => [x, 0, z]));
+    const inner = projPoly([[-4, 4], [4, 4], [4, -4], [-4, -4]].map(([x, z]) => [x, 0, z]));
     ctx.beginPath(); polyPath(outer); ctx.fillStyle = paperTex; ctx.fill();
     ctx.fillStyle = BOARD_WOOD; ctx.globalAlpha = 0.3; ctx.fill(); ctx.globalAlpha = 1;
     strokePts(outer, { closed: true, key: 601, w: 1.4 });
@@ -1084,7 +1086,8 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     // dunkle Felder schraffieren
     for (let sq = 0; sq < 64; sq++) {
       const [x, z] = sqWorld(sq);
-      const poly = [[x - 0.5, z + 0.5], [x + 0.5, z + 0.5], [x + 0.5, z - 0.5], [x - 0.5, z - 0.5]].map(([a, b]) => P3(a, 0, b));
+      const poly = projPoly([[x - 0.5, z + 0.5], [x + 0.5, z + 0.5], [x + 0.5, z - 0.5], [x - 0.5, z - 0.5]].map(([a, b]) => [a, 0, b]));
+      if (poly.length < 3) continue;
       if (((sq & 7) + (sq >> 3)) % 2 !== 0) {
         // helle Felder: nur ein Hauch Schraffur
         ctx.save(); ctx.beginPath(); polyPath(poly); ctx.clip();
@@ -1100,8 +1103,9 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     }
     // Gitter
     for (let i = 1; i < 8; i++) {
-      sketchLine(P3(-4, 0, i - 4), P3(4, 0, i - 4), { key: 700 + i, w: 0.8, alpha: 0.5, passes: 1 });
-      sketchLine(P3(i - 4, 0, -4), P3(i - 4, 0, 4), { key: 720 + i, w: 0.8, alpha: 0.5, passes: 1 });
+      const l1 = projPoly([[-4, 0, i - 4], [4, 0, i - 4]], false), l2 = projPoly([[i - 4, 0, -4], [i - 4, 0, 4]], false);
+      if (l1.length === 2) sketchLine(l1[0], l1[1], { key: 700 + i, w: 0.8, alpha: 0.5, passes: 1 });
+      if (l2.length === 2) sketchLine(l2[0], l2[1], { key: 720 + i, w: 0.8, alpha: 0.5, passes: 1 });
     }
     // Koordinaten (flach auf dem Rahmen liegend)
     const awayH = mul(towardH, -1);
@@ -1579,7 +1583,11 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     // wo die Köpfe hinterer Figuren über die Füße vorderer ragen
     pcs.forEach((p) => (p.depth = Math.hypot(p.x - pos[0], p.z - pos[2])));
     pcs.sort((a, b) => b.depth - a.depth);
-    for (let i = pcs.length - 1; i >= 0; i--) if (proj([pcs[i].x, TABLE + 0.5, pcs[i].z])[2] < 1.5) pcs.splice(i, 1);
+    // Dinge direkt vor der Linse weglassen (große Pflanzen ragen sonst riesig ins Bild)
+    for (let i = pcs.length - 1; i >= 0; i--) {
+      const p = pcs[i], d = Math.min(proj([p.x, TABLE + 0.5, p.z])[2], proj([p.x, TABLE + 3, p.z])[2]);
+      if (d < (p.kind && p.kind !== 'clock' ? 5 : 1.5)) pcs.splice(i, 1);
+    }
     pcs.forEach((p) => (p.kind === 'clock' ? drawClock(p) : p.kind ? drawProp(p) : drawPiece(p)));
   }
 
@@ -1914,7 +1922,7 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     if (!drag.camera) return;
     azGoal = drag.az - (e.clientX - drag.x) * 0.006;
     cam.az = azGoal;
-    cam.el = Math.max(0.3, Math.min(1.35, drag.el + (e.clientY - drag.y) * 0.004));
+    cam.el = Math.max(0.38, Math.min(1.4, drag.el + (e.clientY - drag.y) * 0.004));
     dirty = true;
   });
   canvas.addEventListener('pointerup', (e) => {
@@ -1930,7 +1938,7 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
   });
   canvas.addEventListener('pointercancel', () => { if (pdrag) { snapBack(pdrag); pdrag = null; } drag = null; });
   canvas.addEventListener('dblclick', () => { azGoal = Math.round(azGoal / Math.PI) * Math.PI; cam.el = CAM_EL; cam.dist = CAM_DIST; dirty = true; });
-  canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.dist = Math.max(7, Math.min(20, cam.dist * (1 + e.deltaY * 0.001))); dirty = true; }, { passive: false });
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.dist = Math.max(8, Math.min(24, cam.dist * (1 + e.deltaY * 0.001))); dirty = true; }, { passive: false });
 
   // ---------- Selbst spielen ----------
   const OPP = {
@@ -3173,6 +3181,8 @@ if (typeof module !== 'undefined') module.exports = ChessCore;
     const Wp = (u, v) => [c[0] + (Au[0] * u + Av[0] * v * ct) * K, lift + v * st * K, c[2] + (Au[2] * u + Av[2] * v * ct) * K]; // u: rechts, v: nach oben (vom Schreiber weg)
     const Wg = (u, v) => [c[0] + (Au[0] * u + Av[0] * v * ct) * K, TABLE + 0.005, c[2] + (Au[2] * u + Av[2] * v * ct) * K];
     const Pp = (u, v) => proj(Wp(u, v));
+    // Block zu nah an oder hinter der Kamera: weglassen statt verzerrt zeichnen
+    for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) if (proj(Wp(u * PAD.w / 2, v * PAD.h / 2))[2] < 1.2) return;
     const hw = PAD.w / 2, hh = PAD.h / 2;
     // Schatten, Blatt, Rand
     const sheet = [Pp(-hw, -hh), Pp(hw, -hh), Pp(hw, hh), Pp(-hw, hh)];
